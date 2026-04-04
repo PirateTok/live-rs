@@ -13,7 +13,7 @@ use piratetok_live_rs::structs::TikTokLiveEvent;
 #[tokio::main]
 async fn main() {
     // Connect to a live stream — handles auth, room resolution, and WSS automatically
-    let mut stream = TikTokLive::builder("zooich")
+    let mut stream = TikTokLive::builder("username_here")
         .connect()
         .await
         .unwrap();
@@ -76,7 +76,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ## Configuration
 
 ```rust
-TikTokLive::builder("zooich")
+TikTokLive::builder("username_here")
     .cdn(CdnEndpoint::Eu)        // EU / US / Global (default)
     .timeout(Duration::from_secs(15))
     .max_retries(10)             // default 5, 0 to disable
