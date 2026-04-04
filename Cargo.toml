@@ -1,0 +1,55 @@
+[package]
+name = "piratetok-live-rs"
+version = "0.1.0"
+edition = "2021"
+description = "TikTok Live WebSocket connector — real-time chat, gifts, likes, and viewer events. No authentication required."
+authors = ["Zmole Cristian"]
+license = "0BSD"
+repository = "https://github.com/PirateTok/live-rs"
+homepage = "https://piratetok.boats"
+documentation = "https://docs.rs/piratetok-live-rs"
+readme = "README.md"
+keywords = ["tiktok", "live", "stream", "websocket", "protobuf"]
+categories = ["api-bindings", "network-programming"]
+exclude = [".env", ".env.example"]
+
+[features]
+cli = ["dep:clap", "dep:dotenvy", "dep:tracing-subscriber"]
+
+[dependencies]
+prost = "0.14"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+flate2 = "1"
+urlencoding = "2"
+base64 = "0.22"
+rand = "0.9"
+http = "1"
+futures-util = "0.3"
+
+# cli-only deps (behind feature flag so library users don't pull these)
+clap = { version = "4.6.0", features = ["derive", "env"], optional = true }
+dotenvy = { version = "0.15.7", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+
+[[bin]]
+name = "piratetok-live-rs"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[[example]]
+name = "basic_chat"
+
+[[example]]
+name = "gift_tracker"
+
+[[example]]
+name = "stream_info"
+
+[[example]]
+name = "online_check"
