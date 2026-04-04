@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/PirateTok/.github/main/profile/assets/og-banner-v2.png" alt="PirateTok" width="640" />
+</p>
+
 # piratetok-live-rs
 
 Connect to any TikTok Live stream and receive real-time events — chat, gifts, likes, joins, viewer counts, and 60+ decoded event types. No signing server, no API keys, no authentication required.
@@ -44,6 +48,22 @@ async fn main() {
 piratetok-live-rs = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
+
+## Other languages
+
+| Language | Install | Repo |
+|:---------|:--------|:-----|
+| **Go** | `go get github.com/PirateTok/live-go` | [live-go](https://github.com/PirateTok/live-go) |
+| **Python** | `pip install piratetok-live-py` | [live-py](https://github.com/PirateTok/live-py) |
+| **JavaScript** | `npm install piratetok-live-js` | [live-js](https://github.com/PirateTok/live-js) |
+| **C#** | `dotnet add package PirateTok.Live` | [live-cs](https://github.com/PirateTok/live-cs) |
+| **Java** | `com.piratetok:live` | [live-java](https://github.com/PirateTok/live-java) |
+| **Lua** | `luarocks install piratetok-live-lua` | [live-lua](https://github.com/PirateTok/live-lua) |
+| **Elixir** | `{:piratetok_live, "~> 0.1"}` | [live-ex](https://github.com/PirateTok/live-ex) |
+| **Dart** | `dart pub add piratetok_live` | [live-dart](https://github.com/PirateTok/live-dart) |
+| **C** | `#include "piratetok.h"` | [live-c](https://github.com/PirateTok/live-c) |
+| **PowerShell** | `Install-Module PirateTok.Live` | [live-ps1](https://github.com/PirateTok/live-ps1) |
+| **Shell** | `bpkg install PirateTok/live-sh` | [live-sh](https://github.com/PirateTok/live-sh) |
 
 ## Features
 
@@ -115,22 +135,6 @@ cargo run --example gift_tracker -- <username>     # track gifts with diamond to
 
 - Explicit `DEVICE_BLOCKED` handshake handling is not implemented yet.
 - `.proxy(...)` exists on the builder surface, but proxy transport plumbing is not wired yet.
-
-## Other languages
-
-| Language | Package | Repo |
-|----------|---------|------|
-| C# | `PirateTok.Live` | [PirateTok/live-cs](https://github.com/PirateTok/live-cs) |
-| Go | `github.com/PirateTok/live-go` | [PirateTok/live-go](https://github.com/PirateTok/live-go) |
-| JavaScript | `piratetok-live-js` | [PirateTok/live-js](https://github.com/PirateTok/live-js) |
-| Python | `piratetok-live-py` | [PirateTok/live-py](https://github.com/PirateTok/live-py) |
-| Java | `com.piratetok:live` | [PirateTok/live-java](https://github.com/PirateTok/live-java) |
-| Lua | `piratetok-live-lua` | [PirateTok/live-lua](https://github.com/PirateTok/live-lua) |
-| Elixir | `piratetok_live` | [PirateTok/live-ex](https://github.com/PirateTok/live-ex) |
-| C | `libpiratetok` | [PirateTok/live-c](https://github.com/PirateTok/live-c) |
-| Dart | `piratetok_live` | [PirateTok/live-dart](https://github.com/PirateTok/live-dart) |
-| Shell | `piratetok-live-sh` | [PirateTok/live-sh](https://github.com/PirateTok/live-sh) |
-| PowerShell | `PirateTok.Live` | [PirateTok/live-ps1](https://github.com/PirateTok/live-ps1) |
 
 ## License
 
