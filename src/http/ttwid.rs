@@ -10,15 +10,19 @@ const TIKTOK_URL: &str = "https://www.tiktok.com/";
 /// This is the sole credential needed for WSS live stream connections.
 ///
 /// Uses a random UA from the built-in pool. Pass a custom UA to override.
-pub async fn fetch_ttwid(timeout: std::time::Duration, user_agent: Option<&str>) -> Result<String, TikTokLiveError> {
+pub async fn fetch_ttwid(timeout: std::time::Duration, user_agent: Option<&str>, proxy: Option<&str>) -> Result<String, TikTokLiveError> {
     let ua = user_agent.unwrap_or_else(|| random_ua());
 
-    let client = reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder()
         .timeout(timeout)
         .user_agent(ua)
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(TikTokLiveError::Http)?;
+        .redirect(reqwest::redirect::Policy::none());
+
+    if let Some(proxy_url) = proxy {
+        builder = builder.proxy(reqwest::Proxy::all(proxy_url).map_err(TikTokLiveError::Http)?);
+    }
+
+    let client = builder.build().map_err(TikTokLiveError::Http)?;
 
     let resp = client.get(TIKTOK_URL).send().await?;
 

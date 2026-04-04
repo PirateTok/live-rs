@@ -16,7 +16,7 @@ use crate::websocket::frames::{build_ack, build_enter_room, build_heartbeat, dec
 
 type WsMessage = tokio_tungstenite::tungstenite::Message;
 
-pub async fn run_websocket(ws_url: &str, cookies: &str, user_agent: &str, room_id: &str, heartbeat_interval: Duration, stale_timeout: Duration, tx: mpsc::Sender<TikTokLiveEvent>) -> Result<(), TikTokLiveError> {
+pub async fn run_websocket(ws_url: &str, cookies: &str, user_agent: &str, room_id: &str, heartbeat_interval: Duration, stale_timeout: Duration, _proxy: Option<&str>, tx: mpsc::Sender<TikTokLiveEvent>) -> Result<(), TikTokLiveError> {
     let host = url_host(ws_url)?;
     let ws_key = generate_ws_key();
 

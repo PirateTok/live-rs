@@ -133,7 +133,7 @@ impl TikTokLiveBuilder {
         self
     }
 
-    /// Set proxy URL for HTTP calls (ttwid, check_online, fetch_room_info).
+    /// Set proxy URL for all connections (HTTP + WSS).
     /// Accepts HTTP/HTTPS/SOCKS5 URLs.
     pub fn proxy(mut self, url: impl Into<String>) -> Self {
         self.config.proxy = Some(url.into());
@@ -171,8 +171,9 @@ impl TikTokLiveBuilder {
         let config = self.config;
 
         let ua_for_resolve = config.user_agent.as_deref();
+        let proxy_ref = config.proxy.as_deref();
         info!("fetching room id for {}", config.username);
-        let room_id_resp = fetch_room_id(&config.username, config.timeout, ua_for_resolve).await?;
+        let room_id_resp = fetch_room_id(&config.username, config.timeout, ua_for_resolve, proxy_ref).await?;
         let room_id = room_id_resp.room_id;
 
         let (tx, rx) = mpsc::channel(256);
@@ -190,7 +191,8 @@ impl TikTokLiveBuilder {
                     .unwrap_or_else(|| random_ua())
                     .to_string();
 
-                let ttwid = match fetch_ttwid(config.timeout, Some(&ua)).await {
+                let proxy_ref = config.proxy.as_deref();
+                let ttwid = match fetch_ttwid(config.timeout, Some(&ua), proxy_ref).await {
                     Ok(t) => t,
                     Err(e) => {
                         tracing::error!("ttwid fetch failed: {e}");
@@ -206,7 +208,7 @@ impl TikTokLiveBuilder {
 
                 let err = match run_websocket(
                     &ws_url, &ws_cookie, &ua, &room_id,
-                    config.heartbeat_interval, config.stale_timeout, tx.clone(),
+                    config.heartbeat_interval, config.stale_timeout, proxy_ref, tx.clone(),
                 ).await {
                     Ok(()) => None,
                     Err(e) => Some(e),

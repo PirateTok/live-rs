@@ -7,7 +7,7 @@
 //!   cargo run --example online_check -- hacker_lautar fakeuser999xyznotreal
 
 use piratetok_live_rs::http::api::fetch_room_id;
-use piratetok_live_rs::TikTokLiveError;
+use piratetok_live_rs::errors::TikTokLiveError;
 
 #[tokio::main]
 async fn main() {
@@ -21,7 +21,7 @@ async fn main() {
     let timeout = std::time::Duration::from_secs(10);
 
     for username in &args[1..] {
-        match fetch_room_id(username, timeout, None).await {
+        match fetch_room_id(username, timeout, None, None).await {
             Ok(resp) => {
                 println!("  LIVE  @{username} — room {}", resp.room_id);
             }

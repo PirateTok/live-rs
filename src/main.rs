@@ -55,7 +55,7 @@ async fn main() {
 
                 if args.room_info {
                     let cookies = args.cookies.as_deref();
-                    match fetch_room_info(&room_id, std::time::Duration::from_secs(10), cookies, None).await {
+                    match fetch_room_info(&room_id, std::time::Duration::from_secs(10), cookies, None, None).await {
                         Ok(info) => {
                             println!("[room] title=\"{}\" viewers={} likes={}", info.title, info.viewers, info.likes);
                             if let Some(urls) = &info.stream_url {

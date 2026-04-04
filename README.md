@@ -131,11 +131,6 @@ cargo run --example stream_info -- <username>      # fetch room metadata + strea
 cargo run --example gift_tracker -- <username>     # track gifts with diamond totals
 ```
 
-## Known gaps
-
-- Explicit `DEVICE_BLOCKED` handshake handling is not implemented yet.
-- `.proxy(...)` exists on the builder surface, but proxy transport plumbing is not wired yet.
-
 ## License
 
 0BSD

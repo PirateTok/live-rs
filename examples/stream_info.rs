@@ -30,7 +30,7 @@ async fn main() {
     let cookies = args.get(2).map(|s| s.as_str());
     let timeout = std::time::Duration::from_secs(10);
 
-    let room_id_resp = match fetch_room_id(username, timeout, None).await {
+    let room_id_resp = match fetch_room_id(username, timeout, None, None).await {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Error: {e}");
@@ -40,7 +40,7 @@ async fn main() {
 
     let room_id = &room_id_resp.room_id;
 
-    match fetch_room_info(room_id, timeout, cookies, None).await {
+    match fetch_room_info(room_id, timeout, cookies, None, None).await {
         Ok(room_info) => {
             println!("=== Room Info ===");
             println!("Username: @{username}");

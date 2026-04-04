@@ -11,7 +11,7 @@ pub struct RoomIdResponse {
     pub room_id: String,
 }
 
-fn build_client(timeout: std::time::Duration, cookies: Option<&str>, user_agent: Option<&str>) -> Result<reqwest::Client, TikTokLiveError> {
+fn build_client(timeout: std::time::Duration, cookies: Option<&str>, user_agent: Option<&str>, proxy: Option<&str>) -> Result<reqwest::Client, TikTokLiveError> {
     let ua = user_agent.unwrap_or_else(|| random_ua());
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert("Referer", "https://www.tiktok.com/".parse().map_err(|e| TikTokLiveError::invalid(e))?);
@@ -21,14 +21,20 @@ fn build_client(timeout: std::time::Duration, cookies: Option<&str>, user_agent:
         }
     }
 
-    reqwest::Client::builder().timeout(timeout).user_agent(ua).default_headers(headers).build().map_err(TikTokLiveError::Http)
+    let mut builder = reqwest::Client::builder().timeout(timeout).user_agent(ua).default_headers(headers);
+
+    if let Some(proxy_url) = proxy {
+        builder = builder.proxy(reqwest::Proxy::all(proxy_url).map_err(TikTokLiveError::Http)?);
+    }
+
+    builder.build().map_err(TikTokLiveError::Http)
 }
 
 /// Resolve a TikTok username to a room ID.
 ///
 /// Returns an error if the user doesn't exist or isn't currently live.
-pub async fn fetch_room_id(username: &str, timeout: std::time::Duration, user_agent: Option<&str>) -> Result<RoomIdResponse, TikTokLiveError> {
-    let client = build_client(timeout, None, user_agent)?;
+pub async fn fetch_room_id(username: &str, timeout: std::time::Duration, user_agent: Option<&str>, proxy: Option<&str>) -> Result<RoomIdResponse, TikTokLiveError> {
+    let client = build_client(timeout, None, user_agent, proxy)?;
     let clean = username.trim().trim_start_matches('@');
 
     let url = format!(
@@ -77,8 +83,8 @@ pub async fn fetch_room_id(username: &str, timeout: std::time::Duration, user_ag
 /// For 18+ rooms, pass session cookies (`"sessionid=xxx; sid_tt=xxx"`).
 /// Without cookies, 18+ rooms return [`TikTokLiveError::AgeRestricted`].
 /// Normal rooms work fine with `cookies: None`.
-pub async fn fetch_room_info(room_id: &str, timeout: std::time::Duration, cookies: Option<&str>, user_agent: Option<&str>) -> Result<RoomInfo, TikTokLiveError> {
-    let client = build_client(timeout, cookies, user_agent)?;
+pub async fn fetch_room_info(room_id: &str, timeout: std::time::Duration, cookies: Option<&str>, user_agent: Option<&str>, proxy: Option<&str>) -> Result<RoomInfo, TikTokLiveError> {
+    let client = build_client(timeout, cookies, user_agent, proxy)?;
     let tz_raw = system_timezone();
     let tz = urlencoding::encode(&tz_raw);
     let url = format!(
