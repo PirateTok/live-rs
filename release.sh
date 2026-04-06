@@ -47,28 +47,27 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
     exit 1
 fi
 
-# --- 4. Check crates.io auth ---
-if [[ ! -f "$HOME/.cargo/credentials.toml" ]]; then
-    echo "error: no crates.io token — run 'cargo login' first"
-    exit 1
-fi
-
-# --- 5. Bump version in Cargo.toml ---
+# --- 4. Bump version in Cargo.toml ---
 sed -i "s/^version = \"${CURRENT}\"/version = \"${NEW}\"/" "$CARGO_TOML"
 echo "updated $CARGO_TOML"
 
-# --- 6. Build ---
+# --- 5. Build ---
 echo ""
 echo "=== cargo build ==="
 cargo build --release 2>&1
 echo ""
 
-# --- 7. Dry run publish ---
+# --- 6. Dry run publish (also validates crates.io auth) ---
 echo "=== cargo publish --dry-run ==="
-cargo publish --dry-run 2>&1
+if ! cargo publish --dry-run 2>&1; then
+    echo ""
+    echo "error: dry-run failed — if auth issue, run 'cargo login' first"
+    sed -i "s/^version = \"${NEW}\"/version = \"${CURRENT}\"/" "$CARGO_TOML"
+    exit 1
+fi
 echo ""
 
-# --- 8. Lock file update ---
+# --- 7. Lock file update ---
 cargo generate-lockfile 2>/dev/null || true
 
 # --- 9. Commit message ---
