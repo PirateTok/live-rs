@@ -7,13 +7,13 @@
 //!   cargo run --example stream_info -- <tiktok_username> [cookies]
 //!
 //! Example:
-//!   cargo run --example stream_info -- hacker_lautar
+//!   cargo run --example stream_info -- tiktok
 //!
 //! For 18+ rooms (needs session cookies):
 //!   cargo run --example stream_info -- username "sessionid=abc; sid_tt=abc"
 //!
 //! Pipe to mpv:
-//!   cargo run --example stream_info -- hacker_lautar 2>/dev/null | grep "^SD:" | cut -d' ' -f2 | xargs mpv
+//!   cargo run --example stream_info -- tiktok 2>/dev/null | grep "^SD:" | cut -d' ' -f2 | xargs mpv
 
 use piratetok_live_rs::http::api::{fetch_room_id, fetch_room_info};
 

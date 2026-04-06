@@ -12,7 +12,7 @@
 //!   cargo run --example gift_tracker -- <tiktok_username>
 //!
 //! Example:
-//!   cargo run --example gift_tracker -- hacker_lautar
+//!   cargo run --example gift_tracker -- tiktok
 
 use piratetok_live_rs::structs::TikTokLiveEvent;
 use piratetok_live_rs::TikTokLive;
@@ -25,7 +25,7 @@ async fn main() {
         println!("Usage: {} <tiktok_username>", args[0]);
         println!();
         println!("Example:");
-        println!("  {} hacker_lautar", args[0]);
+        println!("  {} tiktok", args[0]);
         return;
     }
 

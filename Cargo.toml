@@ -53,3 +53,6 @@ name = "stream_info"
 
 [[example]]
 name = "online_check"
+
+[[example]]
+name = "profile_lookup"

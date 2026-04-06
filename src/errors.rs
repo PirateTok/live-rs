@@ -52,6 +52,18 @@ pub enum TikTokLiveError {
 
     #[error("decode: {0}")]
     Decode(String),
+
+    #[error("profile is private: @{0}")]
+    ProfilePrivate(String),
+
+    #[error("profile not found: @{0}")]
+    ProfileNotFound(String),
+
+    #[error("failed to scrape profile: {0}")]
+    ProfileScrape(String),
+
+    #[error("profile fetch error: statusCode={0}")]
+    ProfileError(i64),
 }
 
 impl TikTokLiveError {

@@ -4,7 +4,7 @@
 //!   cargo run --example online_check -- <username> [username2] ...
 //!
 //! Example:
-//!   cargo run --example online_check -- hacker_lautar fakeuser999xyznotreal
+//!   cargo run --example online_check -- tiktok fakeuser999xyznotreal
 
 use piratetok_live_rs::http::api::fetch_room_id;
 use piratetok_live_rs::errors::TikTokLiveError;

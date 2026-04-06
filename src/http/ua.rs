@@ -66,3 +66,59 @@ fn tz_from_localtime_link() -> Option<String> {
         Err(_) => None,
     }
 }
+
+const FALLBACK_LANG: &str = "en";
+const FALLBACK_REGION: &str = "US";
+
+/// Detect system language code (e.g. `"en"`, `"ro"`, `"pt"`).
+///
+/// Parses `LANG` / `LC_ALL` env vars. Falls back to `"en"`.
+pub fn system_language() -> String {
+    system_locale().0
+}
+
+/// Detect system region/country code (e.g. `"US"`, `"RO"`, `"BR"`).
+///
+/// Parses `LANG` / `LC_ALL` env vars. Falls back to `"US"`.
+pub fn system_region() -> String {
+    system_locale().1
+}
+
+/// Returns `(language, region)` from system locale.
+///
+/// Parses POSIX locale format: `ll_CC.encoding` or `ll_CC` or `ll`.
+/// Tries `LC_ALL`, then `LANG`. Falls back to `("en", "US")`.
+pub fn system_locale() -> (String, String) {
+    for var in ["LC_ALL", "LANG"] {
+        if let Ok(val) = std::env::var(var) {
+            let val = val.trim().to_string();
+            if val.is_empty() || val == "C" || val == "POSIX" {
+                continue;
+            }
+            if let Some(parsed) = parse_posix_locale(&val) {
+                return parsed;
+            }
+        }
+    }
+    (FALLBACK_LANG.into(), FALLBACK_REGION.into())
+}
+
+/// Parse `ll_CC.encoding` / `ll_CC` / `ll-CC` → `(lang, region)`.
+fn parse_posix_locale(s: &str) -> Option<(String, String)> {
+    // strip encoding: "en_US.UTF-8" → "en_US"
+    let base = match s.split('.').next() {
+        Some(b) => b,
+        None => s,
+    };
+    // split on _ or -
+    let parts: Vec<&str> = base.splitn(2, |c| c == '_' || c == '-').collect();
+    let lang = parts.first()?.to_lowercase();
+    if lang.len() < 2 {
+        return None;
+    }
+    let region = match parts.get(1) {
+        Some(r) => r.to_uppercase(),
+        None => FALLBACK_REGION.into(),
+    };
+    Some((lang, region))
+}

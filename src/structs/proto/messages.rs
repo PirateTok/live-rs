@@ -361,8 +361,8 @@ pub struct WebcastGiftMessage {
 pub struct WebcastMemberMessage {
     #[prost(bytes = "vec", tag = "1")]
     pub common_raw: Vec<u8>,
-    #[prost(bytes = "vec", tag = "2")]
-    pub user_blob: Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub user: Option<UserIdentity>,
     #[prost(int32, tag = "3")]
     pub member_count: i32,
     #[prost(int32, tag = "10")]

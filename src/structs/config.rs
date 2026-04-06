@@ -1,6 +1,8 @@
 use std::fmt;
 use std::time::Duration;
 
+use crate::http::ua::system_locale;
+
 /// CDN endpoint for the TikTok WebSocket live stream.
 ///
 /// All three resolve to the same Akamai backend — the actual edge
@@ -49,10 +51,17 @@ pub struct TikTokLiveConfig {
     /// authenticated cookies alongside ttwid. For room info on 18+ rooms,
     /// pass cookies directly to `fetch_room_info()` instead.
     pub cookies: Option<String>,
+    /// Language code for API requests and Accept-Language header.
+    /// Auto-detected from system locale (`LANG`/`LC_ALL`), falls back to `"en"`.
+    pub language: String,
+    /// Region/country code for API requests.
+    /// Auto-detected from system locale (`LANG`/`LC_ALL`), falls back to `"US"`.
+    pub region: String,
 }
 
 impl TikTokLiveConfig {
     pub fn new(username: impl Into<String>) -> Self {
+        let (language, region) = system_locale();
         Self {
             username: username.into(),
             cdn: CdnEndpoint::default(),
@@ -63,6 +72,18 @@ impl TikTokLiveConfig {
             proxy: None,
             user_agent: None,
             cookies: None,
+            language,
+            region,
         }
+    }
+
+    /// Returns `browser_language` value, e.g. `"en-US"`.
+    pub fn browser_language(&self) -> String {
+        format!("{}-{}", self.language, self.region)
+    }
+
+    /// Returns `Accept-Language` header value, e.g. `"en-US,en;q=0.9"`.
+    pub fn accept_language(&self) -> String {
+        format!("{}-{},{};q=0.9", self.language, self.region, self.language)
     }
 }

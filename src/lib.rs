@@ -162,6 +162,20 @@ impl TikTokLiveBuilder {
         self
     }
 
+    /// Override language code for API requests and headers.
+    /// Auto-detected from system locale, falls back to `"en"`.
+    pub fn language(mut self, lang: impl Into<String>) -> Self {
+        self.config.language = lang.into();
+        self
+    }
+
+    /// Override region/country code for API requests.
+    /// Auto-detected from system locale, falls back to `"US"`.
+    pub fn region(mut self, region: impl Into<String>) -> Self {
+        self.config.region = region.into();
+        self
+    }
+
     /// Connect to the live stream with auto-reconnection.
     ///
     /// Resolves the username to a room ID, then enters a reconnect loop
@@ -200,15 +214,16 @@ impl TikTokLiveBuilder {
                     }
                 };
 
-                let ws_url = build_ws_url(config.cdn.host(), &room_id, &tz);
+                let ws_url = build_ws_url(config.cdn.host(), &room_id, &tz, &config);
                 let ws_cookie = match &config.cookies {
                     Some(extra) => format!("ttwid={ttwid}; {extra}"),
                     None => format!("ttwid={ttwid}"),
                 };
 
+                let accept_lang = config.accept_language();
                 let err = match run_websocket(
                     &ws_url, &ws_cookie, &ua, &room_id,
-                    config.heartbeat_interval, config.stale_timeout, proxy_ref, tx.clone(),
+                    config.heartbeat_interval, config.stale_timeout, proxy_ref, &accept_lang, tx.clone(),
                 ).await {
                     Ok(()) => None,
                     Err(e) => Some(e),
@@ -277,15 +292,16 @@ impl Drop for TikTokLiveStream {
     }
 }
 
-fn build_ws_url(cdn_host: &str, room_id: &str, tz: &str) -> String {
+fn build_ws_url(cdn_host: &str, room_id: &str, tz: &str, config: &TikTokLiveConfig) -> String {
     let last_rtt = format!("{:.3}", 100.0 + rand::random::<f64>() * 100.0);
+    let browser_lang = config.browser_language();
     let params: &[(&str, &str)] = &[
         ("version_code", "180800"),
         ("device_platform", "web"),
         ("cookie_enabled", "true"),
         ("screen_width", "1920"),
         ("screen_height", "1080"),
-        ("browser_language", "en-US"),
+        ("browser_language", &browser_lang),
         ("browser_platform", "Linux x86_64"),
         ("browser_name", "Mozilla"),
         ("browser_version", "5.0 (X11)"),
@@ -295,11 +311,11 @@ fn build_ws_url(cdn_host: &str, room_id: &str, tz: &str) -> String {
         ("sup_ws_ds_opt", "1"),
         ("update_version_code", "2.0.0"),
         ("compress", "gzip"),
-        ("webcast_language", "en"),
+        ("webcast_language", &config.language),
         ("ws_direct", "1"),
         ("aid", "1988"),
         ("live_id", "12"),
-        ("app_language", "en"),
+        ("app_language", &config.language),
         ("client_enter", "1"),
         ("room_id", room_id),
         ("identity", "audience"),

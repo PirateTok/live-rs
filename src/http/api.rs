@@ -39,7 +39,7 @@ pub async fn fetch_room_id(username: &str, timeout: std::time::Duration, user_ag
 
     let url = format!(
         "{}api-live/user/room?aid=1988&app_name=tiktok_web&device_platform=web_pc\
-        &app_language=en&browser_language=en-US&region=RO&user_is_login=false\
+        &app_language=en&browser_language=en-US&region=US&user_is_login=false\
         &uniqueId={}&sourceType=54&staleTime=600000",
         TIKTOK_URL_WEB, clean
     );

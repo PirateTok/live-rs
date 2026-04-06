@@ -6,7 +6,7 @@
 //!   cargo run
 //!
 //! Or pass args directly:
-//!   cargo run -- --username hacker_lautar
+//!   cargo run -- --username tiktok
 //!
 //! Set RUST_LOG=debug for verbose protocol logging.
 
