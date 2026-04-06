@@ -59,7 +59,7 @@ echo ""
 
 # --- 6. Dry run publish (also validates crates.io auth) ---
 echo "=== cargo publish --dry-run ==="
-if ! cargo publish --dry-run 2>&1; then
+if ! cargo publish --dry-run --allow-dirty 2>&1; then
     echo ""
     echo "error: dry-run failed — if auth issue, run 'cargo login' first"
     sed -i "s/^version = \"${NEW}\"/version = \"${CURRENT}\"/" "$CARGO_TOML"
