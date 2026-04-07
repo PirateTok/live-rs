@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::errors::TikTokLiveError;
-use crate::http::ua::random_ua;
+use crate::http::ua::{random_ua, system_locale};
 
 const SIGI_MARKER: &str = r#"id="__UNIVERSAL_DATA_FOR_REHYDRATION__""#;
 
@@ -82,7 +82,10 @@ pub async fn scrape_profile(
     let resp = client
         .get(format!("https://www.tiktok.com/@{clean}"))
         .header("Cookie", cookie_header)
-        .header("Accept-Language", "en-US,en;q=0.9")
+        .header("Accept-Language", {
+            let (l, r) = system_locale();
+            format!("{l}-{r},{l};q=0.9")
+        })
         .send()
         .await?;
 

@@ -41,20 +41,21 @@
 //! Room metadata (title, viewer counts, stream URLs) is a separate call:
 //!
 //! ```no_run
-//! use piratetok_live_rs::http::api::fetch_room_info;
+//! use piratetok_live_rs::http::api::{fetch_room_info, FetchParams};
 //!
 //! # async fn example() {
-//! let info = fetch_room_info("ROOM_ID", std::time::Duration::from_secs(10), None, None).await;
+//! let info = fetch_room_info("ROOM_ID", FetchParams::default()).await;
 //! # }
 //! ```
 //!
 //! For 18+ rooms, pass session cookies:
 //!
 //! ```no_run
-//! # use piratetok_live_rs::http::api::fetch_room_info;
+//! # use piratetok_live_rs::http::api::{fetch_room_info, FetchParams};
 //! # async fn example() {
-//! let info = fetch_room_info("ROOM_ID", std::time::Duration::from_secs(10),
-//!     Some("sessionid=abc; sid_tt=abc"), None).await;
+//! let info = fetch_room_info("ROOM_ID", FetchParams {
+//!     cookies: Some("sessionid=abc; sid_tt=abc"), ..Default::default()
+//! }).await;
 //! # }
 //! ```
 
@@ -71,7 +72,7 @@ use tokio::task::JoinHandle;
 use tracing::info;
 
 use crate::errors::TikTokLiveError;
-use crate::http::api::fetch_room_id;
+use crate::http::api::{fetch_room_id, FetchParams};
 use crate::http::ttwid::fetch_ttwid;
 use crate::http::ua::{random_ua, system_timezone};
 use crate::structs::config::{CdnEndpoint, TikTokLiveConfig};
@@ -187,7 +188,14 @@ impl TikTokLiveBuilder {
         let ua_for_resolve = config.user_agent.as_deref();
         let proxy_ref = config.proxy.as_deref();
         info!("fetching room id for {}", config.username);
-        let room_id_resp = fetch_room_id(&config.username, config.timeout, ua_for_resolve, proxy_ref).await?;
+        let room_id_resp = fetch_room_id(&config.username, FetchParams {
+            timeout: config.timeout,
+            user_agent: ua_for_resolve,
+            proxy: proxy_ref,
+            language: Some(&config.language),
+            region: Some(&config.region),
+            ..Default::default()
+        }).await?;
         let room_id = room_id_resp.room_id;
 
         let (tx, rx) = mpsc::channel(256);

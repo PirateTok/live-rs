@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use piratetok_live_rs::errors::TikTokLiveError;
-use piratetok_live_rs::http::api::{fetch_room_id, fetch_room_info};
+use piratetok_live_rs::http::api::{fetch_room_id, fetch_room_info, FetchParams};
 use piratetok_live_rs::http::profile_cache::ProfileCache;
 use piratetok_live_rs::http::sigi::SigiProfile;
 use piratetok_live_rs::structs::proto::messages::UserIdentity;
@@ -33,7 +33,7 @@ async fn main() {
 
     // --- 1. Online check ---
     println!("Checking if @{username} is live...");
-    let room_id_resp = match fetch_room_id(username, timeout, None, None).await {
+    let room_id_resp = match fetch_room_id(username, FetchParams { timeout, ..Default::default() }).await {
         Ok(r) => r,
         Err(e) => {
             eprintln!("  {e}");
@@ -45,7 +45,7 @@ async fn main() {
 
     // --- 2. Room info ---
     println!("\nFetching room info...");
-    match fetch_room_info(room_id, timeout, cookies, None, None).await {
+    match fetch_room_info(room_id, FetchParams { timeout, cookies, ..Default::default() }).await {
         Ok(info) => {
             println!("  Title:   {}", info.title);
             println!("  Viewers: {}", info.viewers);

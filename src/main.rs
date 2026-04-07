@@ -11,7 +11,7 @@
 //! Set RUST_LOG=debug for verbose protocol logging.
 
 use clap::Parser;
-use piratetok_live_rs::http::api::fetch_room_info;
+use piratetok_live_rs::http::api::{fetch_room_info, FetchParams};
 use piratetok_live_rs::structs::TikTokLiveEvent;
 use piratetok_live_rs::TikTokLive;
 use tracing_subscriber::EnvFilter;
@@ -55,7 +55,7 @@ async fn main() {
 
                 if args.room_info {
                     let cookies = args.cookies.as_deref();
-                    match fetch_room_info(&room_id, std::time::Duration::from_secs(10), cookies, None, None).await {
+                    match fetch_room_info(&room_id, FetchParams { cookies, ..Default::default() }).await {
                         Ok(info) => {
                             println!("[room] title=\"{}\" viewers={} likes={}", info.title, info.viewers, info.likes);
                             if let Some(urls) = &info.stream_url {

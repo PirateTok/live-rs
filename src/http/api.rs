@@ -1,7 +1,9 @@
+use std::time::Duration;
+
 use serde_json::Value;
 
 use crate::errors::TikTokLiveError;
-use crate::http::ua::{random_ua, system_timezone};
+use crate::http::ua::{random_ua, system_locale, system_timezone};
 use crate::structs::events::{RoomInfo, StreamUrl};
 
 const TIKTOK_URL_WEB: &str = "https://www.tiktok.com/";
@@ -11,19 +13,64 @@ pub struct RoomIdResponse {
     pub room_id: String,
 }
 
-fn build_client(timeout: std::time::Duration, cookies: Option<&str>, user_agent: Option<&str>, proxy: Option<&str>) -> Result<reqwest::Client, TikTokLiveError> {
-    let ua = user_agent.unwrap_or_else(|| random_ua());
+/// Shared parameters for standalone HTTP API calls.
+///
+/// All fields default to auto-detected or `None`. Use struct update syntax:
+/// ```ignore
+/// fetch_room_id("user", FetchParams { timeout: Duration::from_secs(5), ..Default::default() })
+/// ```
+#[derive(Clone, Debug)]
+pub struct FetchParams<'a> {
+    pub timeout: Duration,
+    pub cookies: Option<&'a str>,
+    pub user_agent: Option<&'a str>,
+    pub proxy: Option<&'a str>,
+    pub language: Option<&'a str>,
+    pub region: Option<&'a str>,
+}
+
+impl Default for FetchParams<'_> {
+    fn default() -> Self {
+        Self {
+            timeout: Duration::from_secs(10),
+            cookies: None,
+            user_agent: None,
+            proxy: None,
+            language: None,
+            region: None,
+        }
+    }
+}
+
+impl<'a> FetchParams<'a> {
+    fn resolve_locale(&self) -> (String, String, String) {
+        let (sys_lang, sys_region) = system_locale();
+        let lang = match self.language {
+            Some(l) => l.to_string(),
+            None => sys_lang,
+        };
+        let reg = match self.region {
+            Some(r) => r.to_string(),
+            None => sys_region,
+        };
+        let browser_lang = format!("{lang}-{reg}");
+        (lang, reg, browser_lang)
+    }
+}
+
+fn build_client(params: &FetchParams<'_>) -> Result<reqwest::Client, TikTokLiveError> {
+    let ua = params.user_agent.unwrap_or_else(|| random_ua());
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert("Referer", "https://www.tiktok.com/".parse().map_err(|e| TikTokLiveError::invalid(e))?);
-    if let Some(c) = cookies {
+    if let Some(c) = params.cookies {
         if !c.is_empty() {
             headers.insert("Cookie", c.parse().map_err(|e| TikTokLiveError::invalid(e))?);
         }
     }
 
-    let mut builder = reqwest::Client::builder().timeout(timeout).user_agent(ua).default_headers(headers);
+    let mut builder = reqwest::Client::builder().timeout(params.timeout).user_agent(ua).default_headers(headers);
 
-    if let Some(proxy_url) = proxy {
+    if let Some(proxy_url) = params.proxy {
         builder = builder.proxy(reqwest::Proxy::all(proxy_url).map_err(TikTokLiveError::Http)?);
     }
 
@@ -33,13 +80,15 @@ fn build_client(timeout: std::time::Duration, cookies: Option<&str>, user_agent:
 /// Resolve a TikTok username to a room ID.
 ///
 /// Returns an error if the user doesn't exist or isn't currently live.
-pub async fn fetch_room_id(username: &str, timeout: std::time::Duration, user_agent: Option<&str>, proxy: Option<&str>) -> Result<RoomIdResponse, TikTokLiveError> {
-    let client = build_client(timeout, None, user_agent, proxy)?;
+/// Language/region auto-detected from system locale when not set in params.
+pub async fn fetch_room_id(username: &str, params: FetchParams<'_>) -> Result<RoomIdResponse, TikTokLiveError> {
+    let client = build_client(&params)?;
     let clean = username.trim().trim_start_matches('@');
+    let (lang, reg, browser_lang) = params.resolve_locale();
 
     let url = format!(
         "{}api-live/user/room?aid=1988&app_name=tiktok_web&device_platform=web_pc\
-        &app_language=en&browser_language=en-US&region=US&user_is_login=false\
+        &app_language={lang}&browser_language={browser_lang}&region={reg}&user_is_login=false\
         &uniqueId={}&sourceType=54&staleTime=600000",
         TIKTOK_URL_WEB, clean
     );
@@ -80,21 +129,22 @@ pub async fn fetch_room_id(username: &str, timeout: std::time::Duration, user_ag
 ///
 /// This is an **optional** call — not needed for WSS event streaming.
 ///
-/// For 18+ rooms, pass session cookies (`"sessionid=xxx; sid_tt=xxx"`).
+/// For 18+ rooms, pass session cookies (`"sessionid=xxx; sid_tt=xxx"`) via
+/// `FetchParams { cookies: Some("..."), ..Default::default() }`.
 /// Without cookies, 18+ rooms return [`TikTokLiveError::AgeRestricted`].
-/// Normal rooms work fine with `cookies: None`.
-pub async fn fetch_room_info(room_id: &str, timeout: std::time::Duration, cookies: Option<&str>, user_agent: Option<&str>, proxy: Option<&str>) -> Result<RoomInfo, TikTokLiveError> {
-    let client = build_client(timeout, cookies, user_agent, proxy)?;
+pub async fn fetch_room_info(room_id: &str, params: FetchParams<'_>) -> Result<RoomInfo, TikTokLiveError> {
+    let client = build_client(&params)?;
     let tz_raw = system_timezone();
     let tz = urlencoding::encode(&tz_raw);
+    let (lang, _reg, browser_lang) = params.resolve_locale();
     let url = format!(
         "{}room/info/?aid=1988&app_name=tiktok_web&device_platform=web_pc\
-        &app_language=en&browser_language=en-US&browser_name=Mozilla\
+        &app_language={lang}&browser_language={browser_lang}&browser_name=Mozilla\
         &browser_online=true&browser_platform=Win32\
         &browser_version=5.0+(Windows+NT+10.0%3B+Win64%3B+x64)\
         &cookie_enabled=true&focus_state=true&from_page=user\
         &screen_height=1080&screen_width=1920\
-        &tz_name={tz}&webcast_language=en\
+        &tz_name={tz}&webcast_language={lang}\
         &room_id={}",
         TIKTOK_URL_WEBCAST, room_id
     );
@@ -142,9 +192,6 @@ pub async fn fetch_room_info(room_id: &str, timeout: std::time::Duration, cookie
     })
 }
 
-/// TikTok nests a JSON string inside the room info response at
-/// `data.stream_url.live_core_sdk_data.pull_data.stream_data`.
-/// That string, when parsed, contains stream URLs keyed by quality tier.
 fn parse_stream_urls(json: &Value) -> Option<StreamUrl> {
     let stream_data_str = json.pointer("/data/stream_url/live_core_sdk_data/pull_data/stream_data").and_then(|v| v.as_str())?;
 

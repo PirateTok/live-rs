@@ -15,7 +15,7 @@
 //! Pipe to mpv:
 //!   cargo run --example stream_info -- tiktok 2>/dev/null | grep "^SD:" | cut -d' ' -f2 | xargs mpv
 
-use piratetok_live_rs::http::api::{fetch_room_id, fetch_room_info};
+use piratetok_live_rs::http::api::{fetch_room_id, fetch_room_info, FetchParams};
 
 #[tokio::main]
 async fn main() {
@@ -30,7 +30,7 @@ async fn main() {
     let cookies = args.get(2).map(|s| s.as_str());
     let timeout = std::time::Duration::from_secs(10);
 
-    let room_id_resp = match fetch_room_id(username, timeout, None, None).await {
+    let room_id_resp = match fetch_room_id(username, FetchParams { timeout, ..Default::default() }).await {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Error: {e}");
@@ -40,7 +40,7 @@ async fn main() {
 
     let room_id = &room_id_resp.room_id;
 
-    match fetch_room_info(room_id, timeout, cookies, None, None).await {
+    match fetch_room_info(room_id, FetchParams { timeout, cookies, ..Default::default() }).await {
         Ok(room_info) => {
             println!("=== Room Info ===");
             println!("Username: @{username}");
