@@ -1,6 +1,6 @@
 [package]
 name = "piratetok-live-rs"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "TikTok Live WebSocket connector — real-time chat, gifts, likes, and viewer events. No authentication required."
 authors = ["Zmole Cristian"]
