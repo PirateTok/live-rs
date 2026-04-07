@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use piratetok_live_rs::errors::TikTokLiveError;
 use piratetok_live_rs::http::api::{fetch_room_id, fetch_room_info, FetchParams};
-use piratetok_live_rs::http::profile_cache::ProfileCache;
+use piratetok_live_rs::helpers::profile_cache::ProfileCache;
 use piratetok_live_rs::http::sigi::SigiProfile;
 use piratetok_live_rs::structs::proto::messages::UserIdentity;
 use piratetok_live_rs::structs::TikTokLiveEvent;

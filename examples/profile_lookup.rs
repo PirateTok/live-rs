@@ -7,7 +7,7 @@
 //!   cargo run --example profile_lookup -- tiktok fakeuser999xyznotreal
 
 use piratetok_live_rs::errors::TikTokLiveError;
-use piratetok_live_rs::http::profile_cache::ProfileCache;
+use piratetok_live_rs::helpers::profile_cache::ProfileCache;
 
 #[tokio::main]
 async fn main() {

@@ -61,6 +61,7 @@
 
 pub mod decode;
 pub mod errors;
+pub mod helpers;
 pub mod http;
 pub mod structs;
 pub mod websocket;

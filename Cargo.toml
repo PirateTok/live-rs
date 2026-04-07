@@ -56,3 +56,9 @@ name = "online_check"
 
 [[example]]
 name = "profile_lookup"
+
+[[example]]
+name = "like_debug"
+
+[[example]]
+name = "gift_streak"

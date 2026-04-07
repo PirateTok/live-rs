@@ -30,7 +30,7 @@ struct CacheInner {
 /// Thread-safe via `Arc<Mutex>` — clone freely across tasks.
 ///
 /// ```no_run
-/// use piratetok_live_rs::http::profile_cache::ProfileCache;
+/// use piratetok_live_rs::helpers::profile_cache::ProfileCache;
 ///
 /// # async fn example() {
 /// let cache = ProfileCache::new();
