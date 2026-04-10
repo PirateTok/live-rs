@@ -131,6 +131,17 @@ cargo run --example stream_info -- <username>      # fetch room metadata + strea
 cargo run --example gift_tracker -- <username>     # track gifts with diamond totals
 ```
 
+## Replay testing
+
+Deterministic cross-lib validation against binary WSS captures. Requires testdata from a separate repo:
+
+```bash
+git clone https://github.com/PirateTok/live-testdata testdata
+cargo test
+```
+
+Tests skip gracefully if testdata is not found. You can also set `PIRATETOK_TESTDATA` to point to a custom location.
+
 ## License
 
 0BSD

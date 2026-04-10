@@ -88,40 +88,27 @@ struct GiftGroupEvent {
 // --- test data location ---
 
 fn find_testdata() -> Option<PathBuf> {
+    // 1. PIRATETOK_TESTDATA env var
     if let Ok(dir) = std::env::var("PIRATETOK_TESTDATA") {
         let p = PathBuf::from(dir);
         if p.exists() {
             return Some(p);
         }
     }
-    // relative to repo root: ../live-testdata
-    let relative = PathBuf::from("../live-testdata");
-    if relative.join("captures").exists() {
-        return Some(relative);
-    }
-    // local captures/ dir (dev mode)
-    let local = PathBuf::from("captures");
-    if local.exists() {
-        return Some(local.parent().unwrap_or(Path::new(".")).to_path_buf());
+    // 2. testdata/ in repo root
+    let local = PathBuf::from("testdata");
+    if local.join("captures").exists() {
+        return Some(local);
     }
     None
 }
 
 fn capture_path(testdata: &Path, name: &str) -> PathBuf {
-    // try testdata/captures/name.bin first, then captures/name.bin
-    let in_testdata = testdata.join("captures").join(format!("{name}.bin"));
-    if in_testdata.exists() {
-        return in_testdata;
-    }
-    PathBuf::from(format!("captures/{name}.bin"))
+    testdata.join("captures").join(format!("{name}.bin"))
 }
 
 fn manifest_path(testdata: &Path, name: &str) -> PathBuf {
-    let in_testdata = testdata.join("manifests").join(format!("{name}.json"));
-    if in_testdata.exists() {
-        return in_testdata;
-    }
-    PathBuf::from(format!("captures/manifests/{name}.json"))
+    testdata.join("manifests").join(format!("{name}.json"))
 }
 
 // --- frame reader ---
