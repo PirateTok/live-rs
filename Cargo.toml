@@ -62,3 +62,15 @@ name = "like_debug"
 
 [[example]]
 name = "gift_streak"
+
+[[bin]]
+name = "record_capture"
+path = "src/bin/record_capture.rs"
+
+[[bin]]
+name = "replay_capture"
+path = "src/bin/replay_capture.rs"
+
+[[bin]]
+name = "generate_manifest"
+path = "src/bin/generate_manifest.rs"
