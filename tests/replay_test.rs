@@ -409,23 +409,32 @@ fn event_type_name(event: &TikTokLiveEvent) -> &'static str {
 // --- test runner ---
 
 fn run_capture_test(name: &str) {
+    run_capture_test_variant(name, name);
+}
+
+fn run_capture_test_raw(name: &str) {
+    let raw_name = format!("{name}_raw");
+    run_capture_test_variant(&raw_name, name);
+}
+
+fn run_capture_test_variant(capture_name: &str, manifest_name: &str) {
     let testdata = match find_testdata() {
         Some(d) => d,
         None => {
-            eprintln!("SKIP {name}: no testdata (set PIRATETOK_TESTDATA or clone live-testdata)");
+            eprintln!("SKIP {capture_name}: no testdata (set PIRATETOK_TESTDATA or clone live-testdata)");
             return;
         }
     };
 
-    let cap = capture_path(&testdata, name);
-    let man = manifest_path(&testdata, name);
+    let cap = capture_path(&testdata, capture_name);
+    let man = manifest_path(&testdata, manifest_name);
 
     if !cap.exists() {
-        eprintln!("SKIP {name}: capture not found at {}", cap.display());
+        eprintln!("SKIP {capture_name}: capture not found at {}", cap.display());
         return;
     }
     if !man.exists() {
-        eprintln!("SKIP {name}: manifest not found at {}", man.display());
+        eprintln!("SKIP {capture_name}: manifest not found at {}", man.display());
         return;
     }
 
@@ -435,7 +444,7 @@ fn run_capture_test(name: &str) {
     let frames = read_capture(&cap);
     let result = replay(&frames);
 
-    assert_replay(name, &result, &manifest);
+    assert_replay(capture_name, &result, &manifest);
 }
 
 #[test]
@@ -451,4 +460,21 @@ fn replay_happyhappygaltv() {
 #[test]
 fn replay_fox4newsdallasfortworth() {
     run_capture_test("fox4newsdallasfortworth");
+}
+
+// Raw (uncompressed) capture variants — same manifests, gzip stripped from payloads
+
+#[test]
+fn replay_calvinterest6_raw() {
+    run_capture_test_raw("calvinterest6");
+}
+
+#[test]
+fn replay_happyhappygaltv_raw() {
+    run_capture_test_raw("happyhappygaltv");
+}
+
+#[test]
+fn replay_fox4newsdallasfortworth_raw() {
+    run_capture_test_raw("fox4newsdallasfortworth");
 }

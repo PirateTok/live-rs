@@ -57,6 +57,10 @@ pub struct TikTokLiveConfig {
     /// Region/country code for API requests.
     /// Auto-detected from system locale (`LANG`/`LC_ALL`), falls back to `"US"`.
     pub region: String,
+    /// Whether to request gzip-compressed frames from the WSS server.
+    /// Defaults to `true`. The decode layer handles both compressed and
+    /// uncompressed data regardless of this setting.
+    pub compress: bool,
 }
 
 impl TikTokLiveConfig {
@@ -74,6 +78,7 @@ impl TikTokLiveConfig {
             cookies: None,
             language,
             region,
+            compress: true,
         }
     }
 

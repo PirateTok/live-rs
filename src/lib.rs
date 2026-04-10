@@ -178,6 +178,15 @@ impl TikTokLiveBuilder {
         self
     }
 
+    /// Enable or disable gzip compression for WSS frames. Defaults to `true`.
+    ///
+    /// The decode layer handles both compressed and uncompressed data
+    /// regardless of this setting, so toggling it is always safe.
+    pub fn compress(mut self, compress: bool) -> Self {
+        self.config.compress = compress;
+        self
+    }
+
     /// Connect to the live stream with auto-reconnection.
     ///
     /// Resolves the username to a room ID, then enters a reconnect loop
@@ -319,7 +328,7 @@ fn build_ws_url(cdn_host: &str, room_id: &str, tz: &str, config: &TikTokLiveConf
         ("app_name", "tiktok_web"),
         ("sup_ws_ds_opt", "1"),
         ("update_version_code", "2.0.0"),
-        ("compress", "gzip"),
+        ("compress", if config.compress { "gzip" } else { "" }),
         ("webcast_language", &config.language),
         ("ws_direct", "1"),
         ("aid", "1988"),
