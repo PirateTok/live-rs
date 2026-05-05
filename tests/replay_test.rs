@@ -50,7 +50,7 @@ struct SubRouted {
 struct LikeManifest {
     event_count: u64,
     backwards_jumps: u64,
-    final_max_total: i32,
+    final_max_total: i64,
     final_accumulated: i64,
     acc_total_monotonic: bool,
     accumulated_monotonic: bool,
@@ -60,8 +60,8 @@ struct LikeManifest {
 #[derive(Deserialize)]
 struct LikeEvent {
     wire_count: i32,
-    wire_total: i32,
-    acc_total: i32,
+    wire_total: i64,
+    acc_total: i64,
     accumulated: i64,
     went_backwards: bool,
 }
@@ -147,7 +147,7 @@ struct ReplayResult {
     join_count: u64,
     live_ended_count: u64,
     unknown_types: BTreeMap<String, u64>,
-    like_events: Vec<(i32, i32, i32, i64, bool)>, // (wire_count, wire_total, acc_total, accumulated, went_backwards)
+    like_events: Vec<(i32, i64, i64, i64, bool)>, // (wire_count, wire_total, acc_total, accumulated, went_backwards)
     gift_groups: BTreeMap<String, Vec<(i32, i32, i32, bool, i64)>>, // (gift_id, repeat_count, delta, is_final, diamond_total)
     combo_count: u64,
     non_combo_count: u64,

@@ -8,7 +8,14 @@ const SILENT_ERROR_PATTERNS: &[&str] = &[".unwrap()", ".unwrap_or(", ".expect(",
 
 const ERROR_SWALLOW_EXEMPT: &[&str] = &["src/main.rs"];
 
-const LOC_EXEMPT: &[&str] = &["src/structs/proto/messages.rs", "src/structs/proto/linker.rs", "src/structs/proto/messages_ext.rs"];
+const LOC_EXEMPT: &[&str] = &[
+    "src/structs/proto/messages.rs",
+    "src/structs/proto/messages_ext.rs",
+    "src/structs/proto/linker.rs",
+    "src/structs/proto/types.rs",
+    "src/structs/proto/user.rs",
+    "src/structs/proto/gift_types.rs",
+];
 
 fn main() {
     let mut violations: Vec<String> = Vec::new();

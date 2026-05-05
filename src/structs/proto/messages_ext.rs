@@ -1,24 +1,9 @@
 // Extended + secondary message types.
 
-use super::messages::{CommonMessageData, UserIdentity, UserIdentityContext};
+use super::types::{CommonMessageData, EmoteData, MsgFilter, Text, UserIdentityContext};
+use super::user::UserIdentity;
 
 // -- Extended events (full proto fields) --
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct EmoteData {
-    #[prost(int32, tag = "1")]
-    pub place_in_comment: i32,
-    #[prost(message, optional, tag = "2")]
-    pub emote: Option<EmoteDetails>,
-}
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct EmoteDetails {
-    #[prost(string, tag = "1")]
-    pub emote_id: String,
-    #[prost(message, optional, tag = "2")]
-    pub image: Option<super::messages::Image>,
-}
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WebcastEmoteChatMessage {
@@ -28,6 +13,8 @@ pub struct WebcastEmoteChatMessage {
     pub user: Option<UserIdentity>,
     #[prost(message, repeated, tag = "3")]
     pub emote_list: Vec<EmoteData>,
+    #[prost(message, optional, tag = "4")]
+    pub msg_filter: Option<MsgFilter>,
     #[prost(message, optional, tag = "5")]
     pub user_identity: Option<UserIdentityContext>,
 }
@@ -68,8 +55,16 @@ pub struct WebcastSubNotifyMessage {
     pub subscribe_type: i32,
     #[prost(int32, tag = "6")]
     pub old_subscribe_status: i32,
+    #[prost(int32, tag = "7")]
+    pub user_subscribe_status: i32,
     #[prost(int32, tag = "8")]
     pub subscribing_status: i32,
+    #[prost(int32, tag = "9")]
+    pub change_type: i32,
+    #[prost(int64, tag = "10")]
+    pub upgrade_count: i64,
+    #[prost(message, optional, tag = "11")]
+    pub user: Option<UserIdentity>,
 }
 
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -200,23 +195,23 @@ pub struct WebcastRankTextMessage {
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WebcastGiftDynamicRestrictionMessage {
-    #[prost(bytes = "vec", tag = "1")]
-    pub common_raw: Vec<u8>,
+    #[prost(message, optional, tag = "1")]
+    pub common: Option<CommonMessageData>,
     #[prost(bytes = "vec", tag = "2")]
     pub restriction_blob: Vec<u8>,
 }
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WebcastViewerPicksUpdateMessage {
-    #[prost(bytes = "vec", tag = "1")]
-    pub common_raw: Vec<u8>,
+    #[prost(message, optional, tag = "1")]
+    pub common: Option<CommonMessageData>,
     #[prost(int32, tag = "2")]
     pub update_type: i32,
     #[prost(bytes = "vec", tag = "3")]
     pub picks_blob: Vec<u8>,
 }
 
-// -- Secondary events (common + key fields) --
+// -- Secondary events --
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WebcastSystemMessage {
@@ -412,6 +407,12 @@ pub struct WebcastPerceptionMessage {
 pub struct WebcastSpeakerMessage {
     #[prost(message, optional, tag = "1")]
     pub common: Option<CommonMessageData>,
+    #[prost(message, optional, tag = "2")]
+    pub user: Option<UserIdentity>,
+    #[prost(message, optional, tag = "3")]
+    pub display_text: Option<Text>,
+    #[prost(int32, tag = "4")]
+    pub trigger_type: i32,
 }
 
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -454,4 +455,10 @@ pub struct WebcastToastMessage {
     pub display_duration_ms: i64,
     #[prost(int64, tag = "3")]
     pub delay_display_duration_ms: i64,
+    #[prost(string, tag = "4")]
+    pub toast_text: String,
+    #[prost(string, tag = "5")]
+    pub button_text: String,
+    #[prost(string, tag = "6")]
+    pub button_schema: String,
 }

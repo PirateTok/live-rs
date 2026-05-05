@@ -388,8 +388,8 @@ fn main() {
 struct LikeRow {
     frame_idx: usize,
     wire_count: i32,
-    wire_total: i32,
-    acc_total: i32,
+    wire_total: i64,
+    acc_total: i64,
     acc_accumulated: i64,
     went_backwards: bool,
 }

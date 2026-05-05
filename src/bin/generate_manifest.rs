@@ -56,7 +56,7 @@ struct SubRouted {
 struct LikeManifest {
     event_count: u64,
     backwards_jumps: u64,
-    final_max_total: i32,
+    final_max_total: i64,
     final_accumulated: i64,
     acc_total_monotonic: bool,
     accumulated_monotonic: bool,
@@ -66,8 +66,8 @@ struct LikeManifest {
 #[derive(Serialize)]
 struct LikeEvent {
     wire_count: i32,
-    wire_total: i32,
-    acc_total: i32,
+    wire_total: i64,
+    acc_total: i64,
     accumulated: i64,
     went_backwards: bool,
 }

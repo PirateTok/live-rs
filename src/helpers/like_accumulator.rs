@@ -24,13 +24,13 @@ use crate::structs::proto::messages::WebcastLikeMessage;
 #[derive(Clone, Debug)]
 pub struct LikeStats {
     pub event_like_count: i32,
-    pub total_like_count: i32,
+    pub total_like_count: i64,
     pub accumulated_count: i64,
     pub went_backwards: bool,
 }
 
 pub struct LikeAccumulator {
-    max_total: i32,
+    max_total: i64,
     accumulated: i64,
 }
 
