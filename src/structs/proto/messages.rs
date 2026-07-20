@@ -12,8 +12,9 @@ use super::gift_types::{
 };
 use super::linker::{BattleUserArmies, BattleUserInfo};
 use super::types::{
-    BadgeStruct, CommonMessageData, EmoteData, Image, MsgFilter, PublicAreaCommon,
-    PublicAreaMessageCommon, Text, UserIdentityContext,
+    BadgeStruct, CommentQualityScore, CommonMessageData, EmoteData, Image, LikeEffect,
+    MemberEffectConfig, MsgFilter, PublicAreaCommon, PublicAreaMessageCommon, SpecifiedDisplayText,
+    Text, UserIdentityContext, WaveAlgorithmData,
 };
 use super::user::UserIdentity;
 
@@ -109,6 +110,8 @@ pub struct WebcastChatMessage {
     pub communityflagged_status: i32,
     #[prost(message, optional, tag = "18")]
     pub user_identity: Option<UserIdentityContext>,
+    #[prost(message, repeated, tag = "19")]
+    pub comment_quality_scores: Vec<CommentQualityScore>,
     #[prost(int32, repeated, tag = "20")]
     pub comment_tag: Vec<i32>,
     #[prost(message, optional, tag = "21")]
@@ -139,8 +142,12 @@ pub struct WebcastLikeMessage {
     pub icon: String,
     #[prost(message, repeated, tag = "7")]
     pub icons: Vec<Image>,
+    #[prost(message, repeated, tag = "8")]
+    pub specified_display_text: Vec<SpecifiedDisplayText>,
     #[prost(int64, tag = "9")]
     pub effect_cnt: i64,
+    #[prost(message, repeated, tag = "10")]
+    pub like_effect: Vec<LikeEffect>,
     #[prost(message, optional, tag = "11")]
     pub public_area_message_common: Option<PublicAreaMessageCommon>,
     #[prost(int64, tag = "12")]
@@ -275,6 +282,8 @@ pub struct WebcastMemberMessage {
     pub user_id: i64,
     #[prost(string, tag = "14")]
     pub pop_str: String,
+    #[prost(message, optional, tag = "15")]
+    pub effect_config: Option<MemberEffectConfig>,
     #[prost(message, optional, tag = "17")]
     pub background: Option<Image>,
     #[prost(message, optional, tag = "18")]
@@ -307,6 +316,8 @@ pub struct WebcastMemberMessage {
     pub ec_streamer_key: String,
     #[prost(int64, tag = "33")]
     pub show_wave: i64,
+    #[prost(message, optional, tag = "34")]
+    pub wave_algorithm_data: Option<WaveAlgorithmData>,
     #[prost(int32, tag = "35")]
     pub hit_ab_status: i32,
 }

@@ -386,6 +386,60 @@ pub struct ActivityInfo {
     pub storytag: Option<Image>,
 }
 
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LikeEffect {
+    #[prost(int64, tag = "1")]
+    pub version: i64,
+    #[prost(int64, tag = "2")]
+    pub effect_cnt: i64,
+    #[prost(int64, tag = "3")]
+    pub effect_interval_ms: i64,
+    #[prost(int64, tag = "4")]
+    pub level: i64,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SpecifiedDisplayText {
+    #[prost(int64, tag = "1")]
+    pub uid: i64,
+    #[prost(message, optional, tag = "2")]
+    pub display_text: Option<Text>,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CommentQualityScore {
+    #[prost(string, tag = "1")]
+    pub version: String,
+    #[prost(int64, tag = "2")]
+    pub score: i64,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WaveAlgorithmData {
+    #[prost(string, tag = "1")]
+    pub algorithm_version: String,
+    #[prost(bool, tag = "2")]
+    pub is_alg_hit: bool,
+    #[prost(string, tag = "3")]
+    pub predict_score: String,
+    #[prost(bool, tag = "4")]
+    pub is_rewatch: bool,
+    #[prost(bool, tag = "5")]
+    pub is_follow: bool,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MemberEffectConfig {
+    #[prost(int32, tag = "1")]
+    pub r#type: i32,
+    #[prost(message, optional, tag = "2")]
+    pub icon: Option<Image>,
+    #[prost(message, optional, tag = "4")]
+    pub text_key: Option<Text>,
+    #[prost(message, optional, tag = "8")]
+    pub badge: Option<Image>,
+}
+
 // -- Anchor / Author --
 
 #[derive(Clone, PartialEq, ::prost::Message)]
