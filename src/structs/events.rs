@@ -1,12 +1,12 @@
 use crate::structs::proto::messages::{
-    WebcastCaptionMessage, WebcastChatMessage, WebcastControlMessage, WebcastEnvelopeMessage,
-    WebcastGiftMessage, WebcastGiftPanelUpdateMessage, WebcastGoalUpdateMessage,
-    WebcastGuideMessage, WebcastImDeleteMessage, WebcastInRoomBannerMessage, WebcastLikeMessage,
-    WebcastLinkLayerMessage, WebcastLinkMessage, WebcastLinkMicArmies, WebcastLinkMicBattle,
-    WebcastLinkMicLayoutStateMessage, WebcastLinkMicMethod, WebcastLiveIntroMessage,
-    WebcastMemberMessage, WebcastPollMessage, WebcastRankUpdateMessage, WebcastRoomMessage,
-    WebcastRoomPinMessage, WebcastRoomUserSeqMessage, WebcastSocialMessage,
-    WebcastUnauthorizedMemberMessage,
+    Contributor, WebcastCaptionMessage, WebcastChatMessage, WebcastControlMessage,
+    WebcastEnvelopeMessage, WebcastGiftMessage, WebcastGiftPanelUpdateMessage,
+    WebcastGoalUpdateMessage, WebcastGuideMessage, WebcastImDeleteMessage,
+    WebcastInRoomBannerMessage, WebcastLikeMessage, WebcastLinkLayerMessage, WebcastLinkMessage,
+    WebcastLinkMicArmies, WebcastLinkMicBattle, WebcastLinkMicLayoutStateMessage,
+    WebcastLinkMicMethod, WebcastLiveIntroMessage, WebcastMemberMessage, WebcastPollMessage,
+    WebcastRankUpdateMessage, WebcastRoomMessage, WebcastRoomPinMessage,
+    WebcastRoomUserSeqMessage, WebcastSocialMessage, WebcastUnauthorizedMemberMessage,
 };
 use crate::structs::proto::messages_ext::{
     WebcastAccessControlMessage, WebcastAccessRecallMessage, WebcastAlertBoxAuditResultMessage,
@@ -144,6 +144,52 @@ pub struct StreamUrl {
     pub flv_sd: Option<String>,
     pub flv_ld: Option<String>,
     pub flv_ao: Option<String>,
+}
+
+/// Full audience roster from `/webcast/ranklist/online_audience/`.
+///
+/// Returned by [`fetch_room_audience`](crate::http::api::fetch_room_audience).
+/// `total` counts everyone in the room; `viewers` lists the non-anonymous ones
+/// TikTok is willing to name (the same list the web viewer panel shows).
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct RoomAudience {
+    pub total: i64,
+    pub anonymous: i64,
+    pub viewers: Vec<AudienceViewer>,
+    pub raw_json: String,
+}
+
+/// One named viewer from the audience roster.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct AudienceViewer {
+    pub rank: i64,
+    /// Contribution score (coins) this session — the panel's sort key.
+    pub score: i64,
+    pub user_id: String,
+    /// The @username.
+    pub username: String,
+    pub nickname: String,
+    pub sec_uid: String,
+    pub avatar_url: Option<String>,
+    pub follower_count: i64,
+    pub verified: bool,
+    /// Follows the streamer.
+    pub is_follower: bool,
+    /// The streamer follows them.
+    pub is_following: bool,
+    pub is_subscriber: bool,
+}
+
+impl WebcastRoomUserSeqMessage {
+    /// The top-viewers box next to the viewer counter (usually the top 3
+    /// ranked by contribution score). Entries without a decoded user are
+    /// skipped; the rest come back sorted by rank.
+    pub fn top_viewers(&self) -> Vec<&Contributor> {
+        let mut top: Vec<&Contributor> =
+            self.ranks_list.iter().filter(|c| c.user.is_some()).collect();
+        top.sort_by_key(|c| c.rank);
+        top
+    }
 }
 
 impl WebcastGiftMessage {

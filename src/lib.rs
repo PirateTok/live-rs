@@ -58,6 +58,21 @@
 //! }).await;
 //! # }
 //! ```
+//!
+//! ## Viewer names (optional)
+//!
+//! The WSS `RoomUserSeq` event carries the top-viewers box for free
+//! (`msg.top_viewers()`). For the full roster — every named viewer in the
+//! room — there's a separate login-gated call:
+//!
+//! ```no_run
+//! # use piratetok_live_rs::http::api::{fetch_room_audience, FetchParams};
+//! # async fn example() {
+//! let audience = fetch_room_audience("ROOM_ID", None, FetchParams {
+//!     cookies: Some("sessionid=abc; sid_tt=abc"), ..Default::default()
+//! }).await;
+//! # }
+//! ```
 
 pub mod decode;
 pub mod errors;

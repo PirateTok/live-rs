@@ -38,6 +38,9 @@ pub enum TikTokLiveError {
     #[error("age-restricted stream: {0}")]
     AgeRestricted(String),
 
+    #[error("session required: {0}")]
+    SessionRequired(String),
+
     #[error("device blocked — ttwid was flagged, fetch a fresh one")]
     DeviceBlocked,
 

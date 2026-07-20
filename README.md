@@ -106,6 +106,39 @@ let info = fetch_room_info("ROOM_ID", FetchParams {
 }).await?;
 ```
 
+## Who's watching (viewer names)
+
+Two sources, matching what the web/phone app shows:
+
+```rust
+// 1. Top-viewers box (the top-3 next to the counter) — free with WSS, no cookies
+TikTokLiveEvent::RoomUserSeq(msg) => {
+    for c in msg.top_viewers() {
+        if let Some(u) = &c.user {
+            println!("#{} {} score={}", c.rank, u.nickname, c.score);
+        }
+    }
+}
+```
+
+```rust
+// 2. Full roster (every named viewer in the room) — HTTP, login-gated
+use piratetok_live_rs::http::api::{fetch_room_id, fetch_room_audience, FetchParams};
+
+let room = fetch_room_id("username", FetchParams::default()).await?;
+let audience = fetch_room_audience(&room.room_id, Some(&room.anchor_id), FetchParams {
+    cookies: Some("sessionid=abc; sid_tt=abc"), ..Default::default()
+}).await?;
+println!("{} in room ({} anonymous)", audience.total, audience.anonymous);
+for v in &audience.viewers {
+    println!("#{} @{} ({}) score={}", v.rank, v.username, v.nickname, v.score);
+}
+```
+
+The roster endpoint needs session cookies (TikTok gates it behind login) but no
+signing — no msToken, no X-Bogus. Without cookies it returns
+`TikTokLiveError::SessionRequired`.
+
 ## Gift streaks
 
 ```rust
@@ -139,6 +172,7 @@ cargo run --example stream_info -- <username>       # fetch room metadata + stre
 cargo run --example gift_tracker -- <username>      # track gifts with diamond totals
 cargo run --example gift_streak -- <username>       # per-event gift deltas via GiftStreakTracker
 cargo run --example profile_lookup -- <username>    # look up profile data + HD avatars
+cargo run --example audience -- <username> [cookies] # viewer names: top-3 box + full roster
 cargo run --example like_debug -- <username>        # debug like event patterns
 ```
 

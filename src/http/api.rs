@@ -4,13 +4,15 @@ use serde_json::Value;
 
 use crate::errors::TikTokLiveError;
 use crate::http::ua::{random_ua, system_locale, system_timezone};
-use crate::structs::events::{RoomInfo, StreamUrl};
+use crate::structs::events::{AudienceViewer, RoomAudience, RoomInfo, StreamUrl};
 
 const TIKTOK_URL_WEB: &str = "https://www.tiktok.com/";
 const TIKTOK_URL_WEBCAST: &str = "https://webcast.tiktok.com/webcast/";
 
 pub struct RoomIdResponse {
     pub room_id: String,
+    /// The streamer's user ID — needed by [`fetch_room_audience`].
+    pub anchor_id: String,
 }
 
 /// Shared parameters for standalone HTTP API calls.
@@ -122,7 +124,9 @@ pub async fn fetch_room_id(username: &str, params: FetchParams<'_>) -> Result<Ro
         return Err(TikTokLiveError::HostNotOnline(format!("status={live_status}")));
     }
 
-    Ok(RoomIdResponse { room_id: room_id.to_string() })
+    let anchor_id = json.pointer("/data/user/id").and_then(|v| v.as_str()).unwrap_or_default();
+
+    Ok(RoomIdResponse { room_id: room_id.to_string(), anchor_id: anchor_id.to_string() })
 }
 
 /// Fetch detailed room info: title, viewer counts, stream URLs.
@@ -189,6 +193,111 @@ pub async fn fetch_room_info(room_id: &str, params: FetchParams<'_>) -> Result<R
         total_viewers,
         stream_url,
         raw_json: body,
+    })
+}
+
+/// Fetch the full audience roster: every named viewer currently in the room.
+///
+/// This is the list behind the viewer panel on web/mobile — the whole room,
+/// not just the top-3 box (for that, see
+/// [`WebcastRoomUserSeqMessage::top_viewers`](crate::structs::proto::messages::WebcastRoomUserSeqMessage)
+/// on the WSS `RoomUserSeq` event, which needs no cookies at all).
+///
+/// TikTok gates this endpoint behind a login — pass session cookies
+/// (`"sessionid=xxx; sid_tt=xxx"`) via `FetchParams.cookies` or you get
+/// [`TikTokLiveError::SessionRequired`]. No ttwid, msToken, or signing needed.
+///
+/// `anchor_id` is the streamer's user ID ([`RoomIdResponse::anchor_id`] gives
+/// it to you). Pass `None` to auto-resolve it from room info (one extra request).
+pub async fn fetch_room_audience(
+    room_id: &str,
+    anchor_id: Option<&str>,
+    params: FetchParams<'_>,
+) -> Result<RoomAudience, TikTokLiveError> {
+    let anchor = match anchor_id {
+        Some(a) => a.to_string(),
+        None => {
+            let info = fetch_room_info(room_id, params.clone()).await?;
+            let json: Value = serde_json::from_str(&info.raw_json)?;
+            match json.pointer("/data/owner/id_str").and_then(|v| v.as_str()) {
+                Some(id) if !id.is_empty() => id.to_string(),
+                _ => return Err(TikTokLiveError::invalid("no owner id in room info")),
+            }
+        }
+    };
+
+    let client = build_client(&params)?;
+    let (lang, _reg, browser_lang) = params.resolve_locale();
+    let url = format!(
+        "{}ranklist/online_audience/?aid=1988&app_name=tiktok_web&device_platform=web_pc\
+        &app_language={lang}&browser_language={browser_lang}&channel=tiktok_web\
+        &room_id={room_id}&anchor_id={anchor}",
+        TIKTOK_URL_WEBCAST
+    );
+
+    let resp = client.get(&url).send().await?;
+    let status = resp.status();
+    let body = resp.text().await?;
+
+    if body.is_empty() {
+        return Err(TikTokLiveError::invalid(format!("empty response from online_audience (http {status})")));
+    }
+
+    let json: Value = serde_json::from_str(&body)?;
+
+    match json.get("status_code").and_then(|v| v.as_i64()) {
+        Some(0) => {}
+        Some(20003) => {
+            return Err(TikTokLiveError::SessionRequired(
+                "audience roster needs login — pass session cookies to fetch_room_audience()".into(),
+            ));
+        }
+        Some(code) => {
+            let msg = json.pointer("/data/message").and_then(|v| v.as_str()).unwrap_or_default();
+            return Err(TikTokLiveError::invalid(format!("online_audience status_code={code} {msg}")));
+        }
+        None => return Err(TikTokLiveError::invalid("no status_code in online_audience response")),
+    }
+
+    let data = json["data"].as_object().ok_or_else(|| TikTokLiveError::invalid("missing 'data' in online_audience"))?;
+    let total = data.get("total").and_then(|v| v.as_i64()).unwrap_or_default();
+    let anonymous = data.get("anonymous").and_then(|v| v.as_i64()).unwrap_or_default();
+
+    let viewers = match data.get("ranks").and_then(|v| v.as_array()) {
+        Some(ranks) => ranks.iter().filter_map(parse_audience_viewer).collect(),
+        None => Vec::new(),
+    };
+
+    Ok(RoomAudience { total, anonymous, viewers, raw_json: body })
+}
+
+fn parse_audience_viewer(rank: &Value) -> Option<AudienceViewer> {
+    let user = rank.get("user")?;
+    let user_id = match user.get("id_str").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => user.get("id").and_then(|v| v.as_i64()).unwrap_or_default().to_string(),
+    };
+
+    let str_of = |v: &Value, key: &str| -> String {
+        v.get(key).and_then(|x| x.as_str()).unwrap_or_default().to_string()
+    };
+
+    Some(AudienceViewer {
+        rank: rank.get("rank").and_then(|v| v.as_i64()).unwrap_or_default(),
+        score: rank.get("score").and_then(|v| v.as_i64()).unwrap_or_default(),
+        user_id,
+        username: str_of(user, "display_id"),
+        nickname: str_of(user, "nickname"),
+        sec_uid: str_of(user, "sec_uid"),
+        avatar_url: user
+            .pointer("/avatar_thumb/url_list/0")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        follower_count: user.pointer("/follow_info/follower_count").and_then(|v| v.as_i64()).unwrap_or_default(),
+        verified: user.get("verified").and_then(|v| v.as_bool()).unwrap_or_default(),
+        is_follower: user.get("is_follower").and_then(|v| v.as_bool()).unwrap_or_default(),
+        is_following: user.get("is_following").and_then(|v| v.as_bool()).unwrap_or_default(),
+        is_subscriber: user.get("is_subscribe").and_then(|v| v.as_bool()).unwrap_or_default(),
     })
 }
 
