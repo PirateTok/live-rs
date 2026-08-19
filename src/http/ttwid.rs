@@ -24,19 +24,37 @@ pub async fn fetch_ttwid(timeout: std::time::Duration, user_agent: Option<&str>,
 
     let client = builder.build().map_err(TikTokLiveError::Http)?;
 
-    let resp = client.get(TIKTOK_URL).send().await?;
+    // TikTok serves the ttwid Set-Cookie intermittently on unauthenticated
+    // GETs to tiktok.com (observed ~1 in 5 on some routes/regions, and more
+    // reliably over HTTP/2 than HTTP/1.1). A single attempt therefore often
+    // fails with "no ttwid cookie". Retry a bounded number of times with a
+    // short delay before giving up. Transport errors (timeouts, connection
+    // failures) still propagate immediately via `?`.
+    const MAX_ATTEMPTS: u32 = 8;
+    const RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(750);
 
-    for cookie_header in resp.headers().get_all("set-cookie") {
-        let value = cookie_header
-            .to_str()
-            .map_err(|e| TikTokLiveError::invalid(format!("set-cookie header: {e}")))?;
+    let mut attempt: u32 = 0;
+    loop {
+        attempt += 1;
 
-        if let Some(ttwid) = extract_ttwid(value) {
-            return Ok(ttwid);
+        let resp = client.get(TIKTOK_URL).send().await?;
+
+        for cookie_header in resp.headers().get_all("set-cookie") {
+            let value = cookie_header
+                .to_str()
+                .map_err(|e| TikTokLiveError::invalid(format!("set-cookie header: {e}")))?;
+
+            if let Some(ttwid) = extract_ttwid(value) {
+                return Ok(ttwid);
+            }
         }
-    }
 
-    Err(TikTokLiveError::invalid("no ttwid cookie in tiktok.com response"))
+        if attempt >= MAX_ATTEMPTS {
+            return Err(TikTokLiveError::invalid("no ttwid cookie in tiktok.com response"));
+        }
+
+        tokio::time::sleep(RETRY_DELAY).await;
+    }
 }
 
 /// Extract the ttwid value from a Set-Cookie header string.
