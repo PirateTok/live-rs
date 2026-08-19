@@ -1,4 +1,5 @@
 use std::fmt;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::http::ua::system_locale;
@@ -51,6 +52,14 @@ pub struct TikTokLiveConfig {
     /// authenticated cookies alongside ttwid. For room info on 18+ rooms,
     /// pass cookies directly to `fetch_room_info()` instead.
     pub cookies: Option<String>,
+    /// Optional path to persist the fetched ttwid device token across runs.
+    ///
+    /// TikTok serves the ttwid intermittently and rate-limits fresh issuance
+    /// per IP, but the token itself is long-lived (~1 year). Persisting it
+    /// lets reconnects and restarts reuse a previously fetched token instead
+    /// of minting a new one on every connect. When `None` (default), no
+    /// persistence is done and a fresh ttwid is fetched each connect.
+    pub ttwid_cache_path: Option<PathBuf>,
     /// Language code for API requests and Accept-Language header.
     /// Auto-detected from system locale (`LANG`/`LC_ALL`), falls back to `"en"`.
     pub language: String,
@@ -76,6 +85,7 @@ impl TikTokLiveConfig {
             proxy: None,
             user_agent: None,
             cookies: None,
+            ttwid_cache_path: None,
             language,
             region,
             compress: true,

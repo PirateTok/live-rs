@@ -81,6 +81,7 @@ pub mod http;
 pub mod structs;
 pub mod websocket;
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -94,6 +95,40 @@ use crate::http::ua::{random_ua, system_timezone};
 use crate::structs::config::{CdnEndpoint, TikTokLiveConfig};
 use crate::structs::TikTokLiveEvent;
 use crate::websocket::connection::run_websocket;
+
+/// Load a previously persisted ttwid device token from disk, if any.
+async fn load_cached_ttwid(cache_path: Option<&std::path::Path>) -> Option<String> {
+    let cache_path = cache_path?;
+    match tokio::fs::read_to_string(cache_path).await {
+        Ok(content) => {
+            let token = content.trim();
+            if token.is_empty() {
+                None
+            } else {
+                Some(token.to_string())
+            }
+        }
+        Err(_) => None,
+    }
+}
+
+/// Persist a freshly fetched ttwid device token to disk (best-effort).
+async fn persist_ttwid(cache_path: Option<&std::path::Path>, ttwid: &str) {
+    let Some(cache_path) = cache_path else {
+        return;
+    };
+    if let Some(parent) = cache_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                tracing::warn!("failed to create ttwid cache dir: {e}");
+                return;
+            }
+        }
+    }
+    if let Err(e) = tokio::fs::write(cache_path, ttwid).await {
+        tracing::warn!("failed to persist ttwid cache: {e}");
+    }
+}
 
 /// Entry point for connecting to TikTok Live streams.
 ///
@@ -179,6 +214,16 @@ impl TikTokLiveBuilder {
         self
     }
 
+    /// Persist the fetched ttwid device token to the given file path.
+    ///
+    /// The ttwid is long-lived (~1 year) but TikTok serves it intermittently
+    /// and rate-limits fresh issuance per IP. Enabling a cache reuses a
+    /// previously fetched token across reconnects and process restarts.
+    pub fn ttwid_cache_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.config.ttwid_cache_path = Some(path.into());
+        self
+    }
+
     /// Override language code for API requests and headers.
     /// Auto-detected from system locale, falls back to `"en"`.
     pub fn language(mut self, lang: impl Into<String>) -> Self {
@@ -232,21 +277,33 @@ impl TikTokLiveBuilder {
         let handle = tokio::spawn(async move {
             let tz = system_timezone();
             let mut attempt: u32 = 0;
-            loop {
-                // Pick UA: user override or random from pool (fresh each attempt)
-                let ua = config.user_agent.as_deref()
-                    .unwrap_or_else(|| random_ua())
-                    .to_string();
 
-                let proxy_ref = config.proxy.as_deref();
-                let ttwid = match fetch_ttwid(config.timeout, Some(&ua), proxy_ref).await {
-                    Ok(t) => t,
+            // The ttwid is a long-lived device token (Expires ~1 year) that
+            // TikTok serves intermittently, so resolve it once up-front and
+            // reuse it across reconnects. Prefer a persisted token when one
+            // exists; otherwise fetch fresh (with internal retries) and
+            // persist it. It is only rotated when the server reports
+            // DEVICE_BLOCKED.
+            let proxy_ref = config.proxy.as_deref();
+            let mut ua = config.user_agent.as_deref()
+                .unwrap_or_else(|| random_ua())
+                .to_string();
+            let mut ttwid = match load_cached_ttwid(config.ttwid_cache_path.as_deref()).await {
+                Some(cached) => cached,
+                None => match fetch_ttwid(config.timeout, Some(&ua), proxy_ref).await {
+                    Ok(t) => {
+                        persist_ttwid(config.ttwid_cache_path.as_deref(), &t).await;
+                        t
+                    }
                     Err(e) => {
                         tracing::error!("ttwid fetch failed: {e}");
-                        break;
+                        let _ = tx.send(TikTokLiveEvent::Disconnected).await;
+                        return;
                     }
-                };
+                },
+            };
 
+            loop {
                 let ws_url = build_ws_url(config.cdn.host(), &room_id, &tz, &config);
                 let ws_cookie = match &config.cookies {
                     Some(extra) => format!("ttwid={ttwid}; {extra}"),
@@ -275,6 +332,23 @@ impl TikTokLiveBuilder {
                 if attempt > config.max_retries {
                     info!("max retries ({}) exceeded", config.max_retries);
                     break;
+                }
+
+                // Rotate the device fingerprint only when the server blocked it.
+                if is_device_blocked {
+                    ua = config.user_agent.as_deref()
+                        .unwrap_or_else(|| random_ua())
+                        .to_string();
+                    match fetch_ttwid(config.timeout, Some(&ua), proxy_ref).await {
+                        Ok(t) => {
+                            persist_ttwid(config.ttwid_cache_path.as_deref(), &t).await;
+                            ttwid = t;
+                        }
+                        Err(e) => {
+                            tracing::error!("ttwid fetch failed: {e}");
+                            break;
+                        }
+                    }
                 }
 
                 // On DEVICE_BLOCKED: short delay (2s) since we're getting a fresh
@@ -366,4 +440,24 @@ fn build_ws_url(cdn_host: &str, room_id: &str, tz: &str, config: &TikTokLiveConf
         .join("&");
 
     format!("wss://{cdn_host}/webcast/im/ws_proxy/ws_reuse_supplement/?{query}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{load_cached_ttwid, persist_ttwid};
+
+    #[tokio::test]
+    async fn ttwid_cache_round_trips() {
+        let path = std::env::temp_dir().join(format!("piratetok-ttwid-test-{}", std::process::id()));
+
+        assert!(load_cached_ttwid(Some(path.as_path())).await.is_none());
+
+        persist_ttwid(Some(path.as_path()), "1|base64|ts|hmac").await;
+        assert_eq!(
+            load_cached_ttwid(Some(path.as_path())).await.as_deref(),
+            Some("1|base64|ts|hmac")
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
 }
