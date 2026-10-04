@@ -69,7 +69,7 @@ where
             }
         };
 
-        while let Some(event) = stream.next_event().await {
+        while let Ok(event) = stream.next_event().await {
             if predicate(&event) {
                 if let Some(t) = tx_opt.take() {
                     let _ = t.send(());
@@ -313,7 +313,7 @@ async fn disconnect_unblocks_connect_task_after_connected() {
                 // Signal connected (first event is always Connected)
                 let _ = connected_tx.send(());
                 // Keep consuming events until task is aborted
-                while let Some(_event) = stream.next_event().await {}
+                while let Ok(_event) = stream.next_event().await {}
             }
             Err(e) => {
                 eprintln!("[integration D1] connect failed: {e}");

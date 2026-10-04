@@ -27,7 +27,7 @@ async fn main() {
     let mut tracker = GiftStreakTracker::new();
     let mut total_diamonds: i64 = 0;
 
-    while let Some(event) = stream.next_event().await {
+    while let Ok(event) = stream.next_event().await {
         match event {
             TikTokLiveEvent::Connected { room_id } => {
                 println!("Connected to @{username} (room {room_id})\n");

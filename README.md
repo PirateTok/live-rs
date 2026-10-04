@@ -18,8 +18,8 @@ async fn main() {
         .await
         .unwrap();
 
-    // Each event is a fully decoded protobuf message
-    while let Some(event) = stream.next_event().await {
+    // Each event is a fully decoded protobuf message; Err(ConnectionClosed) once the stream is done
+    while let Ok(event) = stream.next_event().await {
         match event {
             TikTokLiveEvent::Chat(msg) => {
                 let nick = msg.user.as_ref().map_or("?", |u| u.nickname.as_str());
@@ -45,7 +45,7 @@ async fn main() {
 
 ```toml
 [dependencies]
-piratetok-live-rs = "0.1"
+piratetok-live-rs = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -159,9 +159,26 @@ TikTokLiveEvent::Gift(gift) => {
 2. Authenticates and opens a direct WSS connection
 3. Sends protobuf heartbeats every 10s to keep alive
 4. Decodes protobuf event stream into typed Rust structs
-5. Auto-reconnects on stale/dropped connections with fresh credentials
+5. Auto-reconnects on stale/dropped connections
 
 All protobuf structs are hand-written with `prost` derive macros — no `.proto` files, no codegen, no build-time protoc dependency.
+
+### Reconnection
+
+- TikTok only sets the `ttwid` cookie on some anonymous requests, so a cookie-less response is retried up to 8 times (750 ms apart). A ttwid that still can't be fetched counts as a failed attempt and goes through the normal backoff. It never kills the stream.
+- The ttwid + user agent pair is reused across reconnects. It's rotated on `DEVICE_BLOCKED` (2 s delay) and after a connection that dies within 30 s.
+- Backoff is 2 s → 4 s → 8 s → 16 s → 30 s cap. `max_retries` counts *consecutive* failures: a session that stayed up for 30 s resets the budget.
+
+Full API reference (builder, config, stream, errors): [docs/API.md](docs/API.md).
+
+## CLI
+
+```bash
+cp .env.example .env          # TIKTOK_USERNAME=..., optional TIKTOK_COOKIES=...
+cargo run --features cli
+cargo run --features cli -- --username tiktok --room-info
+RUST_LOG=debug cargo run --features cli -- -u tiktok   # verbose protocol logging
+```
 
 ## Examples
 

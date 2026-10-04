@@ -45,7 +45,7 @@ async fn main() {
     println!("{:<6} {:<8} {:<20} {:<8} {:<8} {:<10} {}", "#", "dt(s)", "user", "count", "prev", "gap(s)", "pattern");
     println!("{}", "-".repeat(90));
 
-    while let Some(event) = stream.next_event().await {
+    while let Ok(event) = stream.next_event().await {
         match event {
             TikTokLiveEvent::Connected { room_id } => {
                 println!("--- connected room={room_id} ---");

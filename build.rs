@@ -51,7 +51,8 @@ fn scan_directory(dir: &Path, violations: &mut Vec<String>) {
 }
 
 fn scan_file(path: &Path, violations: &mut Vec<String>) {
-    let rel = path.to_string_lossy().to_string();
+    // Normalize Windows `\` separators so the exemption suffixes below match.
+    let rel = path.to_string_lossy().replace('\\', "/");
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
         Err(_) => return,

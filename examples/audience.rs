@@ -78,7 +78,7 @@ async fn main() {
         }
     };
 
-    while let Some(event) = stream.next_event().await {
+    while let Ok(event) = stream.next_event().await {
         match event {
             TikTokLiveEvent::RoomUserSeq(msg) => {
                 let top = msg.top_viewers();

@@ -1,12 +1,15 @@
 use std::fmt;
 use std::time::Duration;
 
-use crate::http::ua::system_locale;
+use crate::http::api::FetchParams;
+use crate::http::ua::{random_ua, system_locale};
 
-/// CDN endpoint for the TikTok WebSocket live stream.
-///
-/// All three resolve to the same Akamai backend — the actual edge
-/// you hit depends on your IP geography, not the hostname.
+pub const TTWID_FETCH_ATTEMPTS: u32 = 8;
+pub const TTWID_RETRY_DELAY: Duration = Duration::from_millis(750);
+pub const HEALTHY_SESSION: Duration = Duration::from_secs(30);
+pub const DEVICE_BLOCKED_DELAY: Duration = Duration::from_secs(2);
+pub const MAX_BACKOFF: Duration = Duration::from_secs(30);
+
 #[derive(Clone, Debug, Default)]
 pub enum CdnEndpoint {
     Eu,
@@ -31,10 +34,6 @@ impl fmt::Display for CdnEndpoint {
     }
 }
 
-/// Internal configuration for a TikTok Live connection.
-///
-/// You don't create this directly — use [`TikTokLive::builder`](crate::TikTokLive::builder)
-/// which sets sane defaults and exposes configuration via builder methods.
 #[derive(Clone, Debug)]
 pub struct TikTokLiveConfig {
     pub username: String,
@@ -44,22 +43,10 @@ pub struct TikTokLiveConfig {
     pub max_retries: u32,
     pub stale_timeout: Duration,
     pub proxy: Option<String>,
-    /// Custom user agent. When `None`, a random UA is picked from the built-in
-    /// pool on each reconnect (recommended — reduces DEVICE_BLOCKED risk).
     pub user_agent: Option<String>,
-    /// Session cookies for WSS connection. Only needed if you want to pass
-    /// authenticated cookies alongside ttwid. For room info on 18+ rooms,
-    /// pass cookies directly to `fetch_room_info()` instead.
     pub cookies: Option<String>,
-    /// Language code for API requests and Accept-Language header.
-    /// Auto-detected from system locale (`LANG`/`LC_ALL`), falls back to `"en"`.
     pub language: String,
-    /// Region/country code for API requests.
-    /// Auto-detected from system locale (`LANG`/`LC_ALL`), falls back to `"US"`.
     pub region: String,
-    /// Whether to request gzip-compressed frames from the WSS server.
-    /// Defaults to `true`. The decode layer handles both compressed and
-    /// uncompressed data regardless of this setting.
     pub compress: bool,
 }
 
@@ -82,13 +69,43 @@ impl TikTokLiveConfig {
         }
     }
 
-    /// Returns `browser_language` value, e.g. `"en-US"`.
     pub fn browser_language(&self) -> String {
         format!("{}-{}", self.language, self.region)
     }
 
-    /// Returns `Accept-Language` header value, e.g. `"en-US,en;q=0.9"`.
     pub fn accept_language(&self) -> String {
         format!("{}-{},{};q=0.9", self.language, self.region, self.language)
+    }
+
+    pub fn resolved_user_agent(&self) -> String {
+        match &self.user_agent {
+            Some(ua) => ua.clone(),
+            None => random_ua().to_string(),
+        }
+    }
+
+    pub fn ws_cookie(&self, ttwid: &str) -> String {
+        match &self.cookies {
+            Some(extra) => format!("ttwid={ttwid}; {extra}"),
+            None => format!("ttwid={ttwid}"),
+        }
+    }
+
+    pub fn fetch_params(&self) -> FetchParams<'_> {
+        FetchParams {
+            timeout: self.timeout,
+            cookies: None,
+            user_agent: self.user_agent.as_deref(),
+            proxy: self.proxy.as_deref(),
+            language: Some(&self.language),
+            region: Some(&self.region),
+        }
+    }
+}
+
+pub fn reconnect_backoff(attempt: u32) -> Duration {
+    match 1u64.checked_shl(attempt) {
+        Some(secs) => Duration::from_secs(secs).min(MAX_BACKOFF),
+        None => MAX_BACKOFF,
     }
 }

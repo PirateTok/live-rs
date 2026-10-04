@@ -94,11 +94,11 @@ async fn multiple_live_clients_track_chat_for_one_minute() {
                 // Use a short poll timeout so we check stop flag regularly
                 let maybe_event = timeout(Duration::from_millis(500), stream.next_event()).await;
                 match maybe_event {
-                    Ok(Some(TikTokLiveEvent::Chat(_))) => {
+                    Ok(Ok(TikTokLiveEvent::Chat(_))) => {
                         counter.fetch_add(1, Ordering::Relaxed);
                     }
-                    Ok(Some(_)) => {}
-                    Ok(None) => {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(_closed)) => {
                         // stream ended (reconnect exhausted or disconnect)
                         break;
                     }

@@ -37,7 +37,7 @@ async fn main() {
 
     println!("Connected! Waiting for chat messages...\n");
 
-    while let Some(event) = stream.next_event().await {
+    while let Ok(event) = stream.next_event().await {
         match event {
             TikTokLiveEvent::Connected { room_id } => {
                 println!("Connected to room {room_id}! Waiting for chat messages...\n");

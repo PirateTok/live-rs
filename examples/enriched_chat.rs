@@ -81,7 +81,7 @@ async fn main() {
     };
     let pending: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
 
-    while let Some(event) = stream.next_event().await {
+    while let Ok(event) = stream.next_event().await {
         match &event {
             TikTokLiveEvent::Connected { room_id } => {
                 println!("[connected] room {room_id}");
