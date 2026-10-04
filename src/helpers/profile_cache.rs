@@ -1,192 +1,170 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::errors::TikTokLiveError;
 use crate::http::sigi::{scrape_profile, SigiProfile};
-use crate::http::ttwid::fetch_ttwid;
-
-const DEFAULT_TTL: Duration = Duration::from_secs(300);
-const TTWID_TIMEOUT: Duration = Duration::from_secs(10);
-const SCRAPE_TIMEOUT: Duration = Duration::from_secs(15);
+use crate::http::ttwid::{fetch_ttwid, TtwidRequest};
+use crate::http::ua::random_ua;
+use crate::structs::config::{PROFILE_CACHE_TTL, PROFILE_SCRAPE_TIMEOUT, PROFILE_TTWID_TIMEOUT, TTWID_FETCH_ATTEMPTS, TTWID_RETRY_DELAY, TTWID_URL};
 
 enum CacheEntry {
     Profile(SigiProfile, Instant),
     Error(TikTokLiveError, Instant),
 }
 
+#[derive(Clone, Debug)]
+pub enum CacheLookup {
+    Hit(SigiProfile),
+    Miss,
+}
+
 struct CacheInner {
     entries: HashMap<String, CacheEntry>,
     ttwid: Option<String>,
-    ttl: Duration,
+    ttl: std::time::Duration,
     proxy: Option<String>,
-    user_agent: Option<String>,
+    user_agent: String,
     cookies: Option<String>,
 }
 
-/// Cached profile fetcher that scrapes TikTok profile pages for HD avatars
-/// and profile metadata.
-///
-/// Thread-safe via `Arc<Mutex>` — clone freely across tasks.
-///
-/// ```no_run
-/// use piratetok_live_rs::helpers::profile_cache::ProfileCache;
-///
-/// # async fn example() {
-/// let cache = ProfileCache::new();
-/// let profile = cache.fetch("tiktok").await.unwrap();
-/// println!("{} — {} followers", profile.nickname, profile.follower_count);
-/// println!("HD avatar: {}", profile.avatar_large);
-///
-/// // Second call is instant (cached)
-/// let cached = cache.fetch("tiktok").await.unwrap();
-/// # }
-/// ```
 #[derive(Clone)]
 pub struct ProfileCache {
     inner: Arc<Mutex<CacheInner>>,
 }
 
 impl ProfileCache {
-    /// Create a new cache with default TTL (5 minutes).
     pub fn new() -> Self {
-        Self::with_ttl(DEFAULT_TTL)
+        Self::with_ttl(PROFILE_CACHE_TTL)
     }
 
-    /// Create a new cache with a custom TTL.
-    pub fn with_ttl(ttl: Duration) -> Self {
+    pub fn with_ttl(ttl: std::time::Duration) -> Self {
         Self {
             inner: Arc::new(Mutex::new(CacheInner {
                 entries: HashMap::new(),
                 ttwid: None,
                 ttl,
                 proxy: None,
-                user_agent: None,
+                user_agent: random_ua().to_string(),
                 cookies: None,
             })),
         }
     }
 
-    /// Set proxy URL for all HTTP requests.
     pub fn proxy(self, url: impl Into<String>) -> Self {
         self.lock().proxy = Some(url.into());
         self
     }
 
-    /// Override the user agent for all requests.
     pub fn user_agent(self, ua: impl Into<String>) -> Self {
-        self.lock().user_agent = Some(ua.into());
+        self.lock().user_agent = ua.into();
         self
     }
 
-    /// Set session cookies (e.g. `"sessionid=xxx; sid_tt=xxx"`).
-    /// Required for profiles that return statusCode 209002 (login required).
     pub fn cookies(self, cookies: impl Into<String>) -> Self {
         self.lock().cookies = Some(cookies.into());
         self
     }
 
-    /// Fetch a profile, returning cached data if available and not expired.
-    /// On cache miss, scrapes the profile page and caches the result.
-    ///
-    /// Private/not-found profiles are negatively cached — repeated lookups
-    /// for known-bad usernames return the cached error without an HTTP request.
     pub async fn fetch(&self, username: &str) -> Result<SigiProfile, TikTokLiveError> {
         let key = normalize_key(username);
-
-        // Check cache
-        {
-            let inner = self.lock();
-            let ttl = inner.ttl;
-            if let Some(entry) = inner.entries.get(&key) {
-                match entry {
-                    CacheEntry::Profile(profile, ts) if ts.elapsed() < ttl => {
-                        return Ok(profile.clone());
-                    }
-                    CacheEntry::Error(err, ts) if ts.elapsed() < ttl => {
-                        return Err(clone_profile_error(err));
-                    }
-                    _ => {} // expired
-                }
-            }
+        match self.fresh_entry(&key) {
+            FreshEntry::Profile(profile) => return Ok(profile),
+            FreshEntry::Error(err) => return Err(err),
+            FreshEntry::Absent => {}
         }
 
-        // Ensure ttwid
         let ttwid = self.ensure_ttwid().await?;
-
-        // Read config, drop lock before await
         let (proxy, user_agent, cookies) = {
             let inner = self.lock();
             (inner.proxy.clone(), inner.user_agent.clone(), inner.cookies.clone())
         };
 
-        let result = scrape_profile(&key, &ttwid, SCRAPE_TIMEOUT, user_agent.as_deref(), proxy.as_deref(), cookies.as_deref()).await;
-
-        // Cache the result
-        {
-            let mut inner = self.lock();
-            let now = Instant::now();
-            match &result {
-                Ok(profile) => {
-                    inner.entries.insert(key, CacheEntry::Profile(profile.clone(), now));
+        match scrape_profile(&key, &ttwid, PROFILE_SCRAPE_TIMEOUT, Some(&user_agent), proxy.as_deref(), cookies.as_deref()).await {
+            Ok(profile) => {
+                self.lock().entries.insert(key, CacheEntry::Profile(profile.clone(), Instant::now()));
+                Ok(profile)
+            }
+            Err(err) => {
+                if is_negative_cacheable(&err) {
+                    self.lock().entries.insert(key, CacheEntry::Error(clone_profile_error(&err), Instant::now()));
                 }
-                Err(err) if is_negative_cacheable(err) => {
-                    inner.entries.insert(key, CacheEntry::Error(clone_profile_error(err), now));
-                }
-                Err(_) => {} // transient errors not cached
+                tracing::warn!(error = %err, "profile fetch failed");
+                Err(err)
             }
         }
-
-        result
     }
 
-    /// Return a cached profile without fetching. Returns `None` on miss or expiry.
-    pub fn cached(&self, username: &str) -> Option<SigiProfile> {
-        let key = normalize_key(username);
-        let inner = self.lock();
-        match inner.entries.get(&key) {
-            Some(CacheEntry::Profile(profile, ts)) if ts.elapsed() < inner.ttl => Some(profile.clone()),
-            _ => None,
+    pub fn cached(&self, username: &str) -> CacheLookup {
+        match self.fresh_entry(&normalize_key(username)) {
+            FreshEntry::Profile(profile) => CacheLookup::Hit(profile),
+            FreshEntry::Error(err) => {
+                tracing::warn!(error = %err, "cached profile lookup hit a negative entry");
+                CacheLookup::Miss
+            }
+            FreshEntry::Absent => CacheLookup::Miss,
         }
     }
 
-    /// Remove a single entry from the cache.
     pub fn invalidate(&self, username: &str) {
         let key = normalize_key(username);
         self.lock().entries.remove(&key);
     }
 
-    /// Clear the entire cache.
     pub fn invalidate_all(&self) {
         self.lock().entries.clear();
     }
 
+    fn fresh_entry(&self, key: &str) -> FreshEntry {
+        let inner = self.lock();
+        let ttl = inner.ttl;
+        let Some(entry) = inner.entries.get(key) else {
+            return FreshEntry::Absent;
+        };
+        match entry {
+            CacheEntry::Profile(profile, ts) if ts.elapsed() < ttl => FreshEntry::Profile(profile.clone()),
+            CacheEntry::Error(err, ts) if ts.elapsed() < ttl => FreshEntry::Error(clone_profile_error(err)),
+            CacheEntry::Profile(..) | CacheEntry::Error(..) => FreshEntry::Absent,
+        }
+    }
+
     async fn ensure_ttwid(&self) -> Result<String, TikTokLiveError> {
-        {
+        let (cached, proxy, user_agent) = {
             let inner = self.lock();
-            if let Some(ref ttwid) = inner.ttwid {
-                return Ok(ttwid.clone());
-            }
+            (inner.ttwid.clone(), inner.proxy.clone(), inner.user_agent.clone())
+        };
+        for ttwid in cached.iter() {
+            return Ok(ttwid.clone());
         }
 
-        let (proxy, user_agent) = {
-            let inner = self.lock();
-            (inner.proxy.clone(), inner.user_agent.clone())
+        let request = TtwidRequest {
+            url: TTWID_URL,
+            timeout: PROFILE_TTWID_TIMEOUT,
+            user_agent: &user_agent,
+            proxy: proxy.as_deref(),
+            attempts: TTWID_FETCH_ATTEMPTS,
+            retry_delay: TTWID_RETRY_DELAY,
         };
-
-        let ttwid = fetch_ttwid(TTWID_TIMEOUT, user_agent.as_deref(), proxy.as_deref()).await?;
-
+        let ttwid = fetch_ttwid(&request).await?;
         self.lock().ttwid = Some(ttwid.clone());
         Ok(ttwid)
     }
 
-    /// Lock the inner mutex, recovering from poisoning.
     fn lock(&self) -> MutexGuard<'_, CacheInner> {
         match self.inner.lock() {
             Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
+            Err(poisoned) => {
+                tracing::warn!(error = %poisoned, "profile cache mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
         }
     }
+}
+
+enum FreshEntry {
+    Profile(SigiProfile),
+    Error(TikTokLiveError),
+    Absent,
 }
 
 fn normalize_key(username: &str) -> String {

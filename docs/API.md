@@ -39,6 +39,19 @@ No signing server, no x_bogus, no msToken. Just ttwid.
 - Emits `Reconnecting { attempt, max_retries, delay_secs }` before each retry, and `Disconnected` when done.
 - All tuning constants live in `structs::config` (the sanctum).
 
+## `reconnect` (policy, public for tests)
+
+- `judge(SessionExit, lived) -> Judgement`. `Closed` keeps the session; `DeviceBlocked` rotates (end `Blocked`); `Errored` keeps it only if the session lived ≥ 30 s; `NoTtwid` rotates (end `Failed`). Lived ≥ 30 s ⇒ end `Healthy`.
+- `ReconnectBudget::new(max_retries)`, then `.record(end) -> Verdict`. `Healthy` resets the attempt to 1; `Failed`/`Blocked` increment it; past `max_retries` the verdict is `GiveUp`.
+
+## `http::ttwid`
+
+`fetch_ttwid(&TtwidRequest { url, timeout, user_agent, proxy, attempts, retry_delay })`. A response without a non-empty `ttwid` Set-Cookie is retried up to `attempts` times; transport errors return immediately as `Http`.
+
+## `ProfileCache`
+
+Cached sigi profile scraper (HD avatars, metadata). `Arc<Mutex>` inside, so clone freely. `fetch(username)` returns the cached value within the TTL (default 5 min). Private/not-found profiles are cached negatively. `cached(username) -> CacheLookup::{Hit, Miss}` never fetches. `.proxy()`, `.user_agent()`, `.cookies()` (needed for statusCode 209002 profiles), `invalidate`, `invalidate_all`.
+
 ## `TikTokLiveStream`
 
 `next_event().await -> Result<TikTokLiveEvent, TikTokLiveError>`: the next event, or `Err(ConnectionClosed)` once the stream has finished (after `Disconnected`). Dropping the stream aborts the background task and closes the WebSocket.

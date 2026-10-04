@@ -1,56 +1,59 @@
+use std::time::Duration;
+
+use reqwest::header::HeaderMap;
+
 use crate::errors::TikTokLiveError;
-use crate::http::ua::random_ua;
 
-const TIKTOK_URL: &str = "https://www.tiktok.com/";
-
-/// Fetch a fresh ttwid cookie from TikTok via unauthenticated GET.
-///
-/// The ttwid is a device fingerprint token set via `Set-Cookie` on any
-/// request to tiktok.com. It requires no login, no signing, no browser.
-/// This is the sole credential needed for WSS live stream connections.
-///
-/// Uses a random UA from the built-in pool. Pass a custom UA to override.
-pub async fn fetch_ttwid(timeout: std::time::Duration, user_agent: Option<&str>, proxy: Option<&str>) -> Result<String, TikTokLiveError> {
-    let ua = user_agent.unwrap_or_else(|| random_ua());
-
-    let mut builder = reqwest::Client::builder().timeout(timeout).user_agent(ua).redirect(reqwest::redirect::Policy::none());
-
-    if let Some(proxy_url) = proxy {
-        builder = builder.proxy(reqwest::Proxy::all(proxy_url).map_err(TikTokLiveError::Http)?);
-    }
-
-    let client = builder.build().map_err(TikTokLiveError::Http)?;
-
-    let resp = client.get(TIKTOK_URL).send().await?;
-
-    for cookie_header in resp.headers().get_all("set-cookie") {
-        let value = cookie_header.to_str().map_err(|e| TikTokLiveError::invalid(format!("set-cookie header: {e}")))?;
-
-        if let Some(ttwid) = extract_ttwid(value) {
-            return Ok(ttwid);
-        }
-    }
-
-    Err(TikTokLiveError::invalid("no ttwid cookie in tiktok.com response"))
+#[derive(Clone, Debug)]
+pub struct TtwidRequest<'a> {
+    pub url: &'a str,
+    pub timeout: Duration,
+    pub user_agent: &'a str,
+    pub proxy: Option<&'a str>,
+    pub attempts: u32,
+    pub retry_delay: Duration,
 }
 
-/// Extract the ttwid value from a Set-Cookie header string.
-/// Format: `ttwid=1|<base64>|<ts>|<hmac>; Path=/; ...`
-fn extract_ttwid(set_cookie: &str) -> Option<String> {
-    if !set_cookie.starts_with("ttwid=") {
-        return None;
+pub async fn fetch_ttwid(request: &TtwidRequest<'_>) -> Result<String, TikTokLiveError> {
+    let client = build_client(request)?;
+    let mut attempt: u32 = 0;
+    loop {
+        attempt += 1;
+        let resp = client.get(request.url).send().await?;
+        let status = resp.status();
+        let Some(ttwid) = find_ttwid(resp.headers())? else {
+            if attempt >= request.attempts {
+                return Err(TikTokLiveError::ttwid(format!("no ttwid cookie after {attempt} attempts (last http {status})")));
+            }
+            tracing::warn!(attempt, %status, "no ttwid cookie in response, retrying");
+            tokio::time::sleep(request.retry_delay).await;
+            continue;
+        };
+        return Ok(ttwid);
     }
+}
 
-    let value = set_cookie.strip_prefix("ttwid=")?;
-    let end = match value.find(';') {
-        Some(pos) => pos,
-        None => value.len(),
-    };
-    let ttwid = &value[..end];
-
-    if ttwid.is_empty() {
-        return None;
+fn build_client(request: &TtwidRequest<'_>) -> Result<reqwest::Client, TikTokLiveError> {
+    let mut builder = reqwest::Client::builder().timeout(request.timeout).user_agent(request.user_agent).redirect(reqwest::redirect::Policy::none());
+    for proxy in request.proxy.iter() {
+        builder = builder.proxy(reqwest::Proxy::all(*proxy)?);
     }
+    Ok(builder.build()?)
+}
 
-    Some(ttwid.to_string())
+fn find_ttwid(headers: &HeaderMap) -> Result<Option<String>, TikTokLiveError> {
+    for header in headers.get_all("set-cookie") {
+        let value = header.to_str().map_err(|e| TikTokLiveError::invalid(format!("set-cookie header: {e}")))?;
+        let Some(rest) = value.strip_prefix("ttwid=") else {
+            continue;
+        };
+        let Some(token) = rest.split(';').next() else {
+            continue;
+        };
+        if token.is_empty() {
+            continue;
+        }
+        return Ok(Some(token.to_string()));
+    }
+    Ok(None)
 }

@@ -66,6 +66,7 @@ name = "gift_streak"
 [[bin]]
 name = "record_capture"
 path = "src/bin/record_capture.rs"
+required-features = ["cli"]
 
 [[bin]]
 name = "replay_capture"

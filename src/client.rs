@@ -8,7 +8,8 @@ use crate::errors::TikTokLiveError;
 use crate::http::api::fetch_room_id;
 use crate::http::ttwid::fetch_ttwid;
 use crate::http::ua::system_timezone;
-use crate::structs::config::{reconnect_backoff, CdnEndpoint, TikTokLiveConfig, DEVICE_BLOCKED_DELAY, HEALTHY_SESSION, TTWID_FETCH_ATTEMPTS, TTWID_RETRY_DELAY};
+use crate::reconnect::{judge, AttemptEnd, ReconnectBudget, SessionAction, SessionExit, Verdict};
+use crate::structs::config::{CdnEndpoint, TikTokLiveConfig};
 use crate::structs::TikTokLiveEvent;
 use crate::websocket::connection::run_websocket;
 
@@ -120,13 +121,6 @@ enum Credentials {
     Held(Session),
 }
 
-#[derive(Clone, Copy)]
-enum AttemptEnd {
-    Healthy,
-    Failed,
-    Blocked,
-}
-
 struct Attempt {
     end: AttemptEnd,
     credentials: Credentials,
@@ -142,25 +136,16 @@ async fn supervise(config: TikTokLiveConfig, room_id: String, tx: mpsc::Sender<T
 async fn reconnect_loop(config: &TikTokLiveConfig, room_id: &str, tx: &mpsc::Sender<TikTokLiveEvent>) -> Result<(), TikTokLiveError> {
     let tz = system_timezone();
     let mut credentials = Credentials::Fresh;
-    let mut attempt: u32 = 0;
+    let mut budget = ReconnectBudget::new(config.max_retries);
     loop {
         let outcome = run_attempt(config, room_id, &tz, credentials, tx).await;
         credentials = outcome.credentials;
-        attempt = match outcome.end {
-            AttemptEnd::Healthy => 1,
-            AttemptEnd::Failed | AttemptEnd::Blocked => match attempt.checked_add(1) {
-                Some(next) => next,
-                None => break,
-            },
-        };
-        if attempt > config.max_retries {
-            info!("max retries ({}) exceeded", config.max_retries);
-            break;
-        }
-
-        let delay = match outcome.end {
-            AttemptEnd::Blocked => DEVICE_BLOCKED_DELAY,
-            AttemptEnd::Healthy | AttemptEnd::Failed => reconnect_backoff(attempt),
+        let (attempt, delay) = match budget.record(outcome.end) {
+            Verdict::Retry { attempt, delay } => (attempt, delay),
+            Verdict::GiveUp { attempt } => {
+                info!("max retries ({}) exceeded at attempt {attempt}", config.max_retries);
+                break;
+            }
         };
         emit(
             tx,
@@ -183,7 +168,7 @@ async fn run_attempt(config: &TikTokLiveConfig, room_id: &str, tz: &str, credent
         Err(e) => {
             tracing::warn!(error = %e, "ttwid acquisition failed");
             return Attempt {
-                end: AttemptEnd::Failed,
+                end: judge(SessionExit::NoTtwid, Duration::ZERO).end,
                 credentials: Credentials::Fresh,
             };
         }
@@ -205,43 +190,30 @@ async fn run_attempt(config: &TikTokLiveConfig, room_id: &str, tz: &str, credent
         tx.clone(),
     )
     .await;
-    let healthy = started.elapsed() >= HEALTHY_SESSION;
+    let lived = started.elapsed();
 
-    match result {
-        Ok(()) => Attempt {
-            end: settle(healthy),
-            credentials: Credentials::Held(session),
-        },
+    let exit = match result {
+        Ok(()) => SessionExit::Closed,
         Err(TikTokLiveError::DeviceBlocked) => {
             tracing::warn!("DEVICE_BLOCKED — rotating ttwid + UA");
-            Attempt {
-                end: AttemptEnd::Blocked,
-                credentials: Credentials::Fresh,
-            }
+            SessionExit::DeviceBlocked
         }
         Err(e) => {
-            tracing::error!(error = %e, healthy, "websocket error");
-            Attempt {
-                end: settle(healthy),
-                credentials: keep_if_healthy(healthy, session),
-            }
+            tracing::error!(error = %e, lived_secs = lived.as_secs(), "websocket error");
+            SessionExit::Errored
         }
+    };
+    let judgement = judge(exit, lived);
+    Attempt {
+        end: judgement.end,
+        credentials: apply(judgement.session, session),
     }
 }
 
-fn settle(healthy: bool) -> AttemptEnd {
-    if healthy {
-        AttemptEnd::Healthy
-    } else {
-        AttemptEnd::Failed
-    }
-}
-
-fn keep_if_healthy(healthy: bool, session: Session) -> Credentials {
-    if healthy {
-        Credentials::Held(session)
-    } else {
-        Credentials::Fresh
+fn apply(action: SessionAction, session: Session) -> Credentials {
+    match action {
+        SessionAction::Keep => Credentials::Held(session),
+        SessionAction::Rotate => Credentials::Fresh,
     }
 }
 
@@ -250,23 +222,8 @@ async fn ensure_session(config: &TikTokLiveConfig, credentials: Credentials) -> 
         Credentials::Held(session) => Ok(session),
         Credentials::Fresh => {
             let user_agent = config.resolved_user_agent();
-            let ttwid = fetch_ttwid_retrying(config, &user_agent).await?;
+            let ttwid = fetch_ttwid(&config.ttwid_request(&user_agent)).await?;
             Ok(Session { ttwid, user_agent })
-        }
-    }
-}
-
-async fn fetch_ttwid_retrying(config: &TikTokLiveConfig, user_agent: &str) -> Result<String, TikTokLiveError> {
-    let mut attempt: u32 = 1;
-    loop {
-        match fetch_ttwid(config.timeout, Some(user_agent), config.proxy.as_deref()).await {
-            Ok(ttwid) => return Ok(ttwid),
-            Err(TikTokLiveError::InvalidResponse(reason)) if attempt < TTWID_FETCH_ATTEMPTS => {
-                tracing::warn!(attempt, %reason, "ttwid missing from tiktok.com response, retrying");
-                attempt += 1;
-                tokio::time::sleep(TTWID_RETRY_DELAY).await;
-            }
-            Err(e) => return Err(e),
         }
     }
 }

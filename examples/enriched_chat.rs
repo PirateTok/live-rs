@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use piratetok_live_rs::errors::TikTokLiveError;
-use piratetok_live_rs::helpers::profile_cache::ProfileCache;
+use piratetok_live_rs::helpers::profile_cache::{CacheLookup, ProfileCache};
 use piratetok_live_rs::http::api::{fetch_room_id, fetch_room_info, FetchParams};
 use piratetok_live_rs::http::sigi::SigiProfile;
 use piratetok_live_rs::structs::proto::user::UserIdentity;
@@ -143,8 +143,8 @@ fn user_tag(cache: &ProfileCache, user: Option<&UserIdentity>) -> String {
     }
 
     match cache.cached(uid) {
-        Some(p) => format_enriched(&p),
-        None => format!("[{}]", user.nickname),
+        CacheLookup::Hit(p) => format_enriched(&p),
+        CacheLookup::Miss => format!("[{}]", user.nickname),
     }
 }
 
@@ -160,7 +160,7 @@ fn enrich_bg(cache: &ProfileCache, pending: &Arc<Mutex<HashSet<String>>>, user: 
         return;
     }
 
-    if cache.cached(&uid).is_some() {
+    if let CacheLookup::Hit(_) = cache.cached(&uid) {
         return;
     }
 

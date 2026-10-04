@@ -8,6 +8,7 @@ pub mod decode;
 pub mod errors;
 pub mod helpers;
 pub mod http;
+pub mod reconnect;
 pub mod structs;
 pub mod websocket;
 

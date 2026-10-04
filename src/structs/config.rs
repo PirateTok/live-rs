@@ -2,8 +2,13 @@ use std::fmt;
 use std::time::Duration;
 
 use crate::http::api::FetchParams;
+use crate::http::ttwid::TtwidRequest;
 use crate::http::ua::{random_ua, system_locale};
 
+pub const TTWID_URL: &str = "https://www.tiktok.com/";
+pub const PROFILE_CACHE_TTL: Duration = Duration::from_secs(300);
+pub const PROFILE_TTWID_TIMEOUT: Duration = Duration::from_secs(10);
+pub const PROFILE_SCRAPE_TIMEOUT: Duration = Duration::from_secs(15);
 pub const TTWID_FETCH_ATTEMPTS: u32 = 8;
 pub const TTWID_RETRY_DELAY: Duration = Duration::from_millis(750);
 pub const HEALTHY_SESSION: Duration = Duration::from_secs(30);
@@ -88,6 +93,17 @@ impl TikTokLiveConfig {
         match &self.cookies {
             Some(extra) => format!("ttwid={ttwid}; {extra}"),
             None => format!("ttwid={ttwid}"),
+        }
+    }
+
+    pub fn ttwid_request<'a>(&'a self, user_agent: &'a str) -> TtwidRequest<'a> {
+        TtwidRequest {
+            url: TTWID_URL,
+            timeout: self.timeout,
+            user_agent,
+            proxy: self.proxy.as_deref(),
+            attempts: TTWID_FETCH_ATTEMPTS,
+            retry_delay: TTWID_RETRY_DELAY,
         }
     }
 

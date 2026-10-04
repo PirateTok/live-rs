@@ -1,98 +1,122 @@
-//! Raw WSS frame recorder — connects to a live room and dumps every binary
-//! frame to disk with [u32_le length][raw bytes] framing.
-//!
-//! Does NOT decode anything. Just raw bytes off the wire.
-//!
-//! Usage:
-//!   cargo run --bin record_capture -- <username> [output.bin]
-//!
-//! Ctrl+C to stop. Prints stats on exit.
+#![deny(unused_must_use)]
+#![deny(for_loops_over_fallibles)]
+#![deny(dead_code)]
+#![deny(unused_variables)]
+#![deny(unused_assignments)]
 
+use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use base64::Engine;
+use clap::Parser;
+use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
+use piratetok_live_rs::errors::TikTokLiveError;
 use piratetok_live_rs::http::api::{fetch_room_id, FetchParams};
-use piratetok_live_rs::http::ttwid::fetch_ttwid;
+use piratetok_live_rs::http::ttwid::{fetch_ttwid, TtwidRequest};
 use piratetok_live_rs::http::ua::{random_ua, system_timezone};
+use piratetok_live_rs::structs::config::{CdnEndpoint, TTWID_FETCH_ATTEMPTS, TTWID_RETRY_DELAY, TTWID_URL};
 use piratetok_live_rs::websocket::frames::{build_enter_room, build_heartbeat};
 
 type WsMessage = tokio_tungstenite::tungstenite::Message;
+type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
+type WsSink = SplitSink<Ws, WsMessage>;
+
+#[derive(Parser)]
+#[command(about = "Record raw WSS frames from a live room as [u32_le length][raw bytes]; Ctrl+C to stop")]
+struct Args {
+    #[arg(help = "TikTok username (with or without @)")]
+    username: String,
+
+    #[arg(long, default_value = "captures", help = "directory for capture_<username>.bin")]
+    dir: PathBuf,
+}
+
+#[derive(Clone)]
+struct Counters {
+    running: Arc<AtomicBool>,
+    frames: Arc<AtomicU64>,
+    bytes: Arc<AtomicU64>,
+}
+
+enum Flow {
+    Continue,
+    Stop,
+}
 
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        eprintln!("usage: record_capture <username> [output.bin]");
-        std::process::exit(1);
-    }
-
-    let username = &args[1];
-    let output_path = if args.len() > 2 {
-        PathBuf::from(&args[2])
-    } else {
-        PathBuf::from(format!("capture_{}.bin", username.trim_start_matches('@')))
+    tracing_subscriber::fmt().with_writer(std::io::stderr).init();
+    let args = Args::parse();
+    let output_path = args.dir.join(format!("capture_{}.bin", args.username.trim_start_matches('@')));
+    let counters = Counters {
+        running: Arc::new(AtomicBool::new(true)),
+        frames: Arc::new(AtomicU64::new(0)),
+        bytes: Arc::new(AtomicU64::new(0)),
     };
+    let start = Instant::now();
+    ctrlc_handler(counters.clone(), output_path.clone(), start);
 
-    let running = Arc::new(AtomicBool::new(true));
-    let frame_count = Arc::new(AtomicU64::new(0));
-    let byte_count = Arc::new(AtomicU64::new(0));
-
-    // ctrl+c handler
-    let r = running.clone();
-    let fc = frame_count.clone();
-    let bc = byte_count.clone();
-    let out_clone = output_path.clone();
-    ctrlc_handler(r, fc, bc, out_clone);
-
-    eprintln!("[record] resolving @{username}...");
     let ua = random_ua().to_string();
-    let room_id = match fetch_room_id(
-        username,
-        FetchParams {
-            timeout: Duration::from_secs(10),
-            user_agent: Some(&ua),
-            ..Default::default()
-        },
-    )
-    .await
-    {
-        Ok(r) => r.room_id,
+    let room_id = resolve_room(&args.username, &ua).await;
+    let ttwid = acquire_ttwid(&ua).await;
+    let ws = open_socket(&room_id, &ttwid, &ua).await;
+    record(ws, &room_id, &output_path, &counters, start).await;
+    print_stats(&output_path, &counters, start);
+}
+
+async fn resolve_room(username: &str, ua: &str) -> String {
+    eprintln!("[record] resolving @{username}...");
+    let params = FetchParams {
+        timeout: Duration::from_secs(10),
+        user_agent: Some(ua),
+        ..Default::default()
+    };
+    match fetch_room_id(username, params).await {
+        Ok(room) => {
+            eprintln!("[record] room_id={}", room.room_id);
+            room.room_id
+        }
         Err(e) => {
             eprintln!("[record] FATAL: {e}");
             std::process::exit(1);
         }
-    };
-    eprintln!("[record] room_id={room_id}");
+    }
+}
 
+async fn acquire_ttwid(ua: &str) -> String {
     eprintln!("[record] fetching ttwid...");
-    let ttwid = match fetch_ttwid(Duration::from_secs(10), Some(&ua), None).await {
-        Ok(t) => t,
+    let request = TtwidRequest {
+        url: TTWID_URL,
+        timeout: Duration::from_secs(10),
+        user_agent: ua,
+        proxy: None,
+        attempts: TTWID_FETCH_ATTEMPTS,
+        retry_delay: TTWID_RETRY_DELAY,
+    };
+    match fetch_ttwid(&request).await {
+        Ok(ttwid) => ttwid,
         Err(e) => {
             eprintln!("[record] FATAL: ttwid fetch failed: {e}");
             std::process::exit(1);
         }
-    };
+    }
+}
 
-    let tz = system_timezone();
-    let ws_url = build_ws_url(&room_id, &tz);
-    let cookie = format!("ttwid={ttwid}");
-
-    eprintln!("[record] connecting WSS...");
-    let ws_key: String = {
-        let bytes: [u8; 16] = rand::random();
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    };
-
-    let host = ws_url.strip_prefix("wss://").unwrap_or(&ws_url).split('/').next().unwrap_or("webcast-ws.tiktok.com");
-
-    let request = http::Request::builder()
+async fn open_socket(room_id: &str, ttwid: &str, ua: &str) -> Ws {
+    let host = CdnEndpoint::Global.host();
+    let ws_url = build_ws_url(host, room_id, &system_timezone());
+    let key_bytes: [u8; 16] = rand::random();
+    let ws_key = base64::engine::general_purpose::STANDARD.encode(key_bytes);
+    let request = match http::Request::builder()
         .method("GET")
         .uri(&ws_url)
         .header("Host", host)
@@ -100,123 +124,189 @@ async fn main() {
         .header("Connection", "Upgrade")
         .header("Sec-WebSocket-Key", &ws_key)
         .header("Sec-WebSocket-Version", "13")
-        .header("User-Agent", &ua)
+        .header("User-Agent", ua)
         .header("Referer", "https://www.tiktok.com/")
         .header("Origin", "https://www.tiktok.com")
-        .header("Cookie", &cookie)
+        .header("Cookie", format!("ttwid={ttwid}"))
         .body(())
-        .expect("request build");
+    {
+        Ok(request) => request,
+        Err(e) => panic!("ws request build: {e}"),
+    };
 
-    let (ws_stream, _) = match tokio_tungstenite::connect_async(request).await {
-        Ok(pair) => pair,
+    eprintln!("[record] connecting WSS...");
+    match tokio_tungstenite::connect_async(request).await {
+        Ok((ws, _response)) => ws,
         Err(e) => {
             eprintln!("[record] FATAL: WSS connect failed: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+async fn record(ws: Ws, room_id: &str, output_path: &Path, counters: &Counters, start: Instant) {
+    let (mut write, mut read) = ws.split();
+    send_or_die(&mut write, build_heartbeat(room_id), "heartbeat").await;
+    send_or_die(&mut write, build_enter_room(room_id), "enter room").await;
+
+    let mut file = match File::create(output_path) {
+        Ok(file) => file,
+        Err(e) => panic!("create {}: {e}", output_path.display()),
     };
-    let (mut write, mut read) = ws_stream.split();
-
-    // send heartbeat + enter room
-    let hb = build_heartbeat(&room_id).expect("heartbeat");
-    write.send(WsMessage::Binary(hb.into())).await.expect("send hb");
-    let enter = build_enter_room(&room_id).expect("enter room");
-    write.send(WsMessage::Binary(enter.into())).await.expect("send enter");
-
     eprintln!("[record] connected! writing to {}", output_path.display());
     eprintln!("[record] Ctrl+C to stop\n");
 
-    let mut file = std::fs::File::create(&output_path).expect("create output file");
-    let start = Instant::now();
-
-    // heartbeat task
     let (hb_tx, mut hb_rx) = mpsc::channel::<Vec<u8>>(4);
-    let room_id_clone = room_id.clone();
-    let r2 = running.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(10));
-        interval.tick().await; // skip immediate
-        while r2.load(Ordering::Relaxed) {
-            interval.tick().await;
-            if let Ok(hb) = build_heartbeat(&room_id_clone) {
-                if hb_tx.send(hb).await.is_err() {
-                    break;
-                }
-            }
-        }
-    });
+    tokio::spawn(heartbeat_task(room_id.to_string(), counters.running.clone(), hb_tx));
 
-    while running.load(Ordering::Relaxed) {
-        tokio::select! {
-            hb = hb_rx.recv() => {
-                if let Some(hb) = hb {
-                    let _ = write.send(WsMessage::Binary(hb.into())).await;
-                }
-            }
-            msg = read.next() => {
-                match msg {
-                    Some(Ok(WsMessage::Binary(data))) => {
-                        let len = data.len() as u32;
-                        file.write_all(&len.to_le_bytes()).expect("write len");
-                        file.write_all(&data).expect("write data");
-
-                        let n = frame_count.fetch_add(1, Ordering::Relaxed) + 1;
-                        byte_count.fetch_add(data.len() as u64, Ordering::Relaxed);
-
-                        if n % 50 == 0 {
-                            let elapsed = start.elapsed().as_secs();
-                            let bytes = byte_count.load(Ordering::Relaxed);
-                            eprintln!("[record] {n} frames, {bytes} bytes, {elapsed}s");
-                        }
-                    }
-                    Some(Ok(WsMessage::Ping(data))) => {
-                        let _ = write.send(WsMessage::Pong(data)).await;
-                    }
-                    Some(Ok(WsMessage::Close(_))) | None => {
-                        eprintln!("[record] server closed connection");
-                        break;
-                    }
-                    Some(Err(e)) => {
-                        eprintln!("[record] WSS error: {e}");
-                        break;
-                    }
-                    _ => {}
-                }
-            }
+    while counters.running.load(Ordering::Relaxed) {
+        let flow = tokio::select! {
+            hb = hb_rx.recv() => send_heartbeat(&mut write, hb).await,
+            msg = read.next() => handle_message(msg, &mut write, &mut file, counters, start).await,
+        };
+        match flow {
+            Flow::Continue => {}
+            Flow::Stop => break,
         }
     }
 
-    file.flush().expect("flush");
-    print_stats(&output_path, &frame_count, &byte_count, start);
+    match file.flush() {
+        Ok(()) => {}
+        Err(e) => panic!("flush {}: {e}", output_path.display()),
+    }
 }
 
-fn ctrlc_handler(running: Arc<AtomicBool>, frame_count: Arc<AtomicU64>, byte_count: Arc<AtomicU64>, output_path: PathBuf) {
-    let start = Instant::now();
+async fn send_or_die(write: &mut WsSink, frame: Result<Vec<u8>, TikTokLiveError>, what: &str) {
+    let bytes = match frame {
+        Ok(bytes) => bytes,
+        Err(e) => panic!("build {what}: {e}"),
+    };
+    match write.send(WsMessage::Binary(bytes.into())).await {
+        Ok(()) => {}
+        Err(e) => panic!("send {what}: {e}"),
+    }
+}
+
+async fn send_heartbeat(write: &mut WsSink, hb: Option<Vec<u8>>) -> Flow {
+    let Some(hb) = hb else {
+        tracing::warn!("heartbeat task ended");
+        return Flow::Stop;
+    };
+    match write.send(WsMessage::Binary(hb.into())).await {
+        Ok(()) => Flow::Continue,
+        Err(e) => {
+            tracing::error!(error = %e, "heartbeat send failed");
+            Flow::Stop
+        }
+    }
+}
+
+async fn handle_message(msg: Option<Result<WsMessage, tokio_tungstenite::tungstenite::Error>>, write: &mut WsSink, file: &mut File, counters: &Counters, start: Instant) -> Flow {
+    let Some(msg) = msg else {
+        eprintln!("[record] websocket stream ended");
+        return Flow::Stop;
+    };
+    match msg {
+        Ok(WsMessage::Binary(data)) => {
+            write_frame(file, &data, counters, start);
+            Flow::Continue
+        }
+        Ok(WsMessage::Ping(data)) => match write.send(WsMessage::Pong(data)).await {
+            Ok(()) => Flow::Continue,
+            Err(e) => {
+                tracing::warn!(error = %e, "pong send failed");
+                Flow::Stop
+            }
+        },
+        Ok(WsMessage::Close(frame)) => {
+            eprintln!("[record] server closed connection: {frame:?}");
+            Flow::Stop
+        }
+        Ok(WsMessage::Text(text)) => {
+            tracing::warn!(len = text.len(), "unexpected text frame, not recorded");
+            Flow::Continue
+        }
+        Ok(WsMessage::Pong(..)) | Ok(WsMessage::Frame(..)) => Flow::Continue,
+        Err(e) => {
+            tracing::error!(error = %e, "WSS error");
+            Flow::Stop
+        }
+    }
+}
+
+async fn heartbeat_task(room_id: String, running: Arc<AtomicBool>, tx: mpsc::Sender<Vec<u8>>) {
+    let mut interval = tokio::time::interval(Duration::from_secs(10));
+    interval.tick().await;
+    while running.load(Ordering::Relaxed) {
+        interval.tick().await;
+        let frame = match build_heartbeat(&room_id) {
+            Ok(frame) => frame,
+            Err(e) => {
+                tracing::error!(error = %e, "heartbeat build failed");
+                return;
+            }
+        };
+        match tx.send(frame).await {
+            Ok(()) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "heartbeat receiver gone");
+                return;
+            }
+        }
+    }
+}
+
+fn write_frame(file: &mut File, data: &[u8], counters: &Counters, start: Instant) {
+    let len = match u32::try_from(data.len()) {
+        Ok(len) => len,
+        Err(e) => panic!("frame larger than u32: {e}"),
+    };
+    let size = u64::from(len);
+    match file.write_all(&len.to_le_bytes()).and_then(|()| file.write_all(data)) {
+        Ok(()) => {}
+        Err(e) => panic!("write frame: {e}"),
+    }
+    let n = counters.frames.fetch_add(1, Ordering::Relaxed) + 1;
+    counters.bytes.fetch_add(size, Ordering::Relaxed);
+    if n % 50 == 0 {
+        eprintln!("[record] {n} frames, {} bytes, {}s", counters.bytes.load(Ordering::Relaxed), start.elapsed().as_secs());
+    }
+}
+
+fn ctrlc_handler(counters: Counters, output_path: PathBuf, start: Instant) {
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        running.store(false, Ordering::Relaxed);
+        match tokio::signal::ctrl_c().await {
+            Ok(()) => {}
+            Err(e) => tracing::error!(error = %e, "ctrl-c listener failed"),
+        }
+        counters.running.store(false, Ordering::Relaxed);
         eprintln!();
-        print_stats(&output_path, &frame_count, &byte_count, start);
+        print_stats(&output_path, &counters, start);
         std::process::exit(0);
     });
 }
 
-fn print_stats(path: &PathBuf, frames: &AtomicU64, bytes: &AtomicU64, start: Instant) {
-    let f = frames.load(Ordering::Relaxed);
-    let b = bytes.load(Ordering::Relaxed);
-    let elapsed = start.elapsed().as_secs_f32();
-    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+fn print_stats(path: &Path, counters: &Counters, start: Instant) {
+    let frames = counters.frames.load(Ordering::Relaxed);
+    let bytes = counters.bytes.load(Ordering::Relaxed);
+    let elapsed = start.elapsed();
     eprintln!("\n=== CAPTURE STATS ===");
     eprintln!("file:       {}", path.display());
-    eprintln!("frames:     {f}");
-    eprintln!("payload:    {b} bytes");
-    eprintln!("file size:  {file_size} bytes (payload + {f}x4 framing)");
-    eprintln!("duration:   {elapsed:.1}s");
-    if elapsed > 0.0 {
-        eprintln!("rate:       {:.1} frames/s, {:.0} bytes/s", f as f32 / elapsed, b as f32 / elapsed);
+    eprintln!("frames:     {frames}");
+    eprintln!("payload:    {bytes} bytes");
+    match std::fs::metadata(path) {
+        Ok(meta) => eprintln!("file size:  {} bytes (payload + {frames}x4 framing)", meta.len()),
+        Err(e) => tracing::warn!(error = %e, "capture file not readable"),
+    }
+    eprintln!("duration:   {:.1}s", elapsed.as_secs_f64());
+    let ms = elapsed.as_millis();
+    if ms > 0 {
+        let fps_x10 = u128::from(frames) * 10_000 / ms;
+        eprintln!("rate:       {}.{} frames/s, {} bytes/s", fps_x10 / 10, fps_x10 % 10, u128::from(bytes) * 1000 / ms);
     }
 }
 
-fn build_ws_url(room_id: &str, tz: &str) -> String {
+fn build_ws_url(host: &str, room_id: &str, tz: &str) -> String {
     let last_rtt = format!("{:.3}", 100.0 + rand::random::<f64>() * 100.0);
     let params: &[(&str, &str)] = &[
         ("version_code", "180800"),
@@ -249,5 +339,5 @@ fn build_ws_url(room_id: &str, tz: &str) -> String {
         ("did_rule", "3"),
     ];
     let query: String = params.iter().map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v))).collect::<Vec<_>>().join("&");
-    format!("wss://webcast-ws.tiktok.com/webcast/im/ws_proxy/ws_reuse_supplement/?{query}")
+    format!("wss://{host}/webcast/im/ws_proxy/ws_reuse_supplement/?{query}")
 }

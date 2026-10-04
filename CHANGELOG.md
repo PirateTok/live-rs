@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0
+
+### Breaking
+- `http::ttwid::fetch_ttwid(timeout, Option<&str>, Option<&str>)` → `fetch_ttwid(&TtwidRequest)`. `TtwidRequest { url, timeout, user_agent, proxy, attempts, retry_delay }` makes the endpoint injectable (offline fixtures), and the retry now lives inside `fetch_ttwid`, so `ProfileCache` gets it too. Build one from config with `TikTokLiveConfig::ttwid_request(&ua)` or the sanctum consts (`TTWID_URL`, `TTWID_FETCH_ATTEMPTS`, `TTWID_RETRY_DELAY`).
+- `ProfileCache::cached()` returns `CacheLookup::{Hit(SigiProfile), Miss}` instead of `Option<SigiProfile>`.
+- `ProfileCache` picks its UA from the pool once, at construction (`.user_agent()` still overrides), instead of per ttwid fetch.
+- `record_capture` bin: needs `--features cli`; args via clap; writes `<--dir, default captures>/capture_<username>.bin` (the explicit output-path positional is gone).
+
+### Added
+- `reconnect` module (public): `judge(SessionExit, lived) -> Judgement { end, session: Keep|Rotate }` and `ReconnectBudget::record(AttemptEnd) -> Verdict::{Retry{attempt, delay}, GiveUp}`. The client loop runs on these, so the policy can be tested offline.
+- Offline tests: `tests/ttwid_mock_test.rs` (a local HTTP fixture withholds the cookie N times → retry until success; always missing → error after the budget; empty `ttwid=` counts as missing; connection refused → no retry), `tests/reconnect_policy_test.rs` (backoff/give-up, healthy reset, DEVICE_BLOCKED short delay, `max_retries(0)`, scripted run counting ttwid fetches).
+- `PROFILE_CACHE_TTL`, `PROFILE_TTWID_TIMEOUT`, `PROFILE_SCRAPE_TIMEOUT` moved into `structs::config`.
+
+### Fixed
+- `record_capture`: a closed heartbeat channel no longer busy-loops; pong/heartbeat send failures are logged and stop the recording instead of being dropped.
+
 ## 0.3.0
 
 ### Breaking
