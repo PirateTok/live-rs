@@ -6,15 +6,11 @@
 
 use std::collections::BTreeMap;
 
-use super::gift_types::{
-    GiftDetails, GiftIMPriority, GiftMonitorInfo, GiftTrayInfo, InteractiveGiftInfo,
-    LynxGiftExtra, MatchInfo, SponsorshipInfo, TextEffect,
-};
+use super::gift_types::{GiftDetails, GiftIMPriority, GiftMonitorInfo, GiftTrayInfo, InteractiveGiftInfo, LynxGiftExtra, MatchInfo, SponsorshipInfo, TextEffect};
 use super::linker::{BattleUserArmies, BattleUserInfo};
 use super::types::{
-    BadgeStruct, CommentQualityScore, CommonMessageData, EmoteData, Image, LikeEffect,
-    MemberEffectConfig, MsgFilter, PublicAreaCommon, PublicAreaMessageCommon, SpecifiedDisplayText,
-    Text, UserIdentityContext, WaveAlgorithmData,
+    BadgeStruct, CommentQualityScore, CommonMessageData, EmoteData, Image, LikeEffect, MemberEffectConfig, MsgFilter, PublicAreaCommon, PublicAreaMessageCommon, SpecifiedDisplayText, Text, UserIdentityContext,
+    WaveAlgorithmData,
 };
 use super::user::UserIdentity;
 

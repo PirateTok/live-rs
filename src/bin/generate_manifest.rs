@@ -19,9 +19,7 @@ use piratetok_live_rs::decode::mapper;
 use piratetok_live_rs::helpers::gift_streak::GiftStreakTracker;
 use piratetok_live_rs::helpers::like_accumulator::LikeAccumulator;
 use piratetok_live_rs::structs::proto::frames::WebcastPushFrame;
-use piratetok_live_rs::structs::proto::messages::{
-    WebcastGiftMessage, WebcastLikeMessage, WebcastResponse,
-};
+use piratetok_live_rs::structs::proto::messages::{WebcastGiftMessage, WebcastLikeMessage, WebcastResponse};
 use piratetok_live_rs::structs::TikTokLiveEvent;
 use piratetok_live_rs::websocket::frames::decompress_if_gzipped;
 
@@ -198,11 +196,19 @@ fn main() {
             if msg.r#type == "WebcastGiftMessage" {
                 if let Ok(gift_msg) = WebcastGiftMessage::decode(msg.payload.as_slice()) {
                     let is_combo = gift_msg.is_combo_gift();
-                    if is_combo { combo_count += 1; } else { non_combo_count += 1; }
+                    if is_combo {
+                        combo_count += 1;
+                    } else {
+                        non_combo_count += 1;
+                    }
 
                     let streak = gift_tracker.process(&gift_msg);
-                    if streak.is_final { streak_finals += 1; }
-                    if streak.event_gift_count < 0 { negative_deltas += 1; }
+                    if streak.is_final {
+                        streak_finals += 1;
+                    }
+                    if streak.event_gift_count < 0 {
+                        negative_deltas += 1;
+                    }
 
                     let key = gift_msg.group_id.to_string();
                     gift_groups.entry(key).or_default().push(GiftGroupEvent {
@@ -220,9 +226,7 @@ fn main() {
     let backwards_jumps = like_events.iter().filter(|e| e.went_backwards).count() as u64;
     let acc_total_monotonic = like_events.windows(2).all(|w| w[1].acc_total >= w[0].acc_total);
     let accumulated_monotonic = like_events.windows(2).all(|w| w[1].accumulated >= w[0].accumulated);
-    let (final_max, final_acc) = like_events.last()
-        .map(|e| (e.acc_total, e.accumulated))
-        .unwrap_or((0, 0));
+    let (final_max, final_acc) = like_events.last().map(|e| (e.acc_total, e.accumulated)).unwrap_or((0, 0));
 
     let manifest = Manifest {
         frame_count: frames.len() as u64,

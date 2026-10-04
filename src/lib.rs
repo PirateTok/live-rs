@@ -213,30 +213,30 @@ impl TikTokLiveBuilder {
         let ua_for_resolve = config.user_agent.as_deref();
         let proxy_ref = config.proxy.as_deref();
         info!("fetching room id for {}", config.username);
-        let room_id_resp = fetch_room_id(&config.username, FetchParams {
-            timeout: config.timeout,
-            user_agent: ua_for_resolve,
-            proxy: proxy_ref,
-            language: Some(&config.language),
-            region: Some(&config.region),
-            ..Default::default()
-        }).await?;
+        let room_id_resp = fetch_room_id(
+            &config.username,
+            FetchParams {
+                timeout: config.timeout,
+                user_agent: ua_for_resolve,
+                proxy: proxy_ref,
+                language: Some(&config.language),
+                region: Some(&config.region),
+                ..Default::default()
+            },
+        )
+        .await?;
         let room_id = room_id_resp.room_id;
 
         let (tx, rx) = mpsc::channel(256);
 
-        tx.send(TikTokLiveEvent::Connected { room_id: room_id.clone() })
-            .await
-            .map_err(|_| TikTokLiveError::ConnectionClosed)?;
+        tx.send(TikTokLiveEvent::Connected { room_id: room_id.clone() }).await.map_err(|_| TikTokLiveError::ConnectionClosed)?;
 
         let handle = tokio::spawn(async move {
             let tz = system_timezone();
             let mut attempt: u32 = 0;
             loop {
                 // Pick UA: user override or random from pool (fresh each attempt)
-                let ua = config.user_agent.as_deref()
-                    .unwrap_or_else(|| random_ua())
-                    .to_string();
+                let ua = config.user_agent.as_deref().unwrap_or_else(|| random_ua()).to_string();
 
                 let proxy_ref = config.proxy.as_deref();
                 let ttwid = match fetch_ttwid(config.timeout, Some(&ua), proxy_ref).await {
@@ -254,10 +254,7 @@ impl TikTokLiveBuilder {
                 };
 
                 let accept_lang = config.accept_language();
-                let err = match run_websocket(
-                    &ws_url, &ws_cookie, &ua, &room_id,
-                    config.heartbeat_interval, config.stale_timeout, proxy_ref, &accept_lang, tx.clone(),
-                ).await {
+                let err = match run_websocket(&ws_url, &ws_cookie, &ua, &room_id, config.heartbeat_interval, config.stale_timeout, proxy_ref, &accept_lang, tx.clone()).await {
                     Ok(()) => None,
                     Err(e) => Some(e),
                 };
@@ -279,17 +276,15 @@ impl TikTokLiveBuilder {
 
                 // On DEVICE_BLOCKED: short delay (2s) since we're getting a fresh
                 // ttwid + UA anyway. On other errors: exponential backoff.
-                let delay = if is_device_blocked {
-                    Duration::from_secs(2)
-                } else {
-                    Duration::from_secs((1u64 << attempt).min(30))
-                };
+                let delay = if is_device_blocked { Duration::from_secs(2) } else { Duration::from_secs((1u64 << attempt).min(30)) };
 
-                let _ = tx.send(TikTokLiveEvent::Reconnecting {
-                    attempt,
-                    max_retries: config.max_retries,
-                    delay_secs: delay.as_secs(),
-                }).await;
+                let _ = tx
+                    .send(TikTokLiveEvent::Reconnecting {
+                        attempt,
+                        max_retries: config.max_retries,
+                        delay_secs: delay.as_secs(),
+                    })
+                    .await;
                 info!("reconnecting in {}s (attempt {}/{})", delay.as_secs(), attempt, config.max_retries);
                 tokio::time::sleep(delay).await;
             }
@@ -359,11 +354,7 @@ fn build_ws_url(cdn_host: &str, room_id: &str, tz: &str, config: &TikTokLiveConf
         ("did_rule", "3"),
     ];
 
-    let query: String = params
-        .iter()
-        .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
-        .collect::<Vec<_>>()
-        .join("&");
+    let query: String = params.iter().map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v))).collect::<Vec<_>>().join("&");
 
     format!("wss://{cdn_host}/webcast/im/ws_proxy/ws_reuse_supplement/?{query}")
 }

@@ -3,10 +3,7 @@
 //
 // We keep the lib alias `UserIdentity` (legacy name) but the wire type is `User`.
 
-use super::types::{
-    ActivityInfo, AnchorLevel, AuthenticationInfo, Author, BadgeStruct, BorderInfo, ComboBadgeInfo,
-    FansClubInfo, FansClubMember, FollowInfo, Image, PayGrade, SubscribeInfo, UserAttr, UserHonor,
-};
+use super::types::{ActivityInfo, AnchorLevel, AuthenticationInfo, Author, BadgeStruct, BorderInfo, ComboBadgeInfo, FansClubInfo, FansClubMember, FollowInfo, Image, PayGrade, SubscribeInfo, UserAttr, UserHonor};
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OwnRoom {

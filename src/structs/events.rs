@@ -1,27 +1,16 @@
 use crate::structs::proto::messages::{
-    Contributor, WebcastCaptionMessage, WebcastChatMessage, WebcastControlMessage,
-    WebcastEnvelopeMessage, WebcastGiftMessage, WebcastGiftPanelUpdateMessage,
-    WebcastGoalUpdateMessage, WebcastGuideMessage, WebcastImDeleteMessage,
-    WebcastInRoomBannerMessage, WebcastLikeMessage, WebcastLinkLayerMessage, WebcastLinkMessage,
-    WebcastLinkMicArmies, WebcastLinkMicBattle, WebcastLinkMicLayoutStateMessage,
-    WebcastLinkMicMethod, WebcastLiveIntroMessage, WebcastMemberMessage, WebcastPollMessage,
-    WebcastRankUpdateMessage, WebcastRoomMessage, WebcastRoomPinMessage,
-    WebcastRoomUserSeqMessage, WebcastSocialMessage, WebcastUnauthorizedMemberMessage,
+    Contributor, WebcastCaptionMessage, WebcastChatMessage, WebcastControlMessage, WebcastEnvelopeMessage, WebcastGiftMessage, WebcastGiftPanelUpdateMessage, WebcastGoalUpdateMessage, WebcastGuideMessage,
+    WebcastImDeleteMessage, WebcastInRoomBannerMessage, WebcastLikeMessage, WebcastLinkLayerMessage, WebcastLinkMessage, WebcastLinkMicArmies, WebcastLinkMicBattle, WebcastLinkMicLayoutStateMessage,
+    WebcastLinkMicMethod, WebcastLiveIntroMessage, WebcastMemberMessage, WebcastPollMessage, WebcastRankUpdateMessage, WebcastRoomMessage, WebcastRoomPinMessage, WebcastRoomUserSeqMessage, WebcastSocialMessage,
+    WebcastUnauthorizedMemberMessage,
 };
 use crate::structs::proto::messages_ext::{
-    WebcastAccessControlMessage, WebcastAccessRecallMessage, WebcastAlertBoxAuditResultMessage,
-    WebcastBarrageMessage, WebcastBindingGiftMessage, WebcastBoostCardMessage,
-    WebcastBottomMessage, WebcastEmoteChatMessage, WebcastGameRankNotifyMessage,
-    WebcastGiftBroadcastMessage, WebcastGiftDynamicRestrictionMessage, WebcastGiftPromptMessage,
-    WebcastHourlyRankMessage, WebcastLinkMicBattlePunishFinish, WebcastLinkMicFanTicketMethod,
-    WebcastLinkStateMessage, WebcastLinkmicBattleTaskMessage, WebcastLiveGameIntroMessage,
-    WebcastMarqueeAnnouncementMessage, WebcastMsgDetectMessage, WebcastNoticeMessage,
-    WebcastNotifyMessage, WebcastOecLiveShoppingMessage, WebcastPartnershipDropsUpdateMessage,
-    WebcastPartnershipGameOfflineMessage, WebcastPartnershipPunishMessage,
-    WebcastPerceptionMessage, WebcastQuestionNewMessage, WebcastRankTextMessage,
-    WebcastRoomVerifyMessage, WebcastSpeakerMessage, WebcastSubCapsuleMessage,
-    WebcastSubNotifyMessage, WebcastSubPinEventMessage, WebcastSubscriptionNotifyMessage,
-    WebcastSystemMessage, WebcastToastMessage, WebcastViewerPicksUpdateMessage,
+    WebcastAccessControlMessage, WebcastAccessRecallMessage, WebcastAlertBoxAuditResultMessage, WebcastBarrageMessage, WebcastBindingGiftMessage, WebcastBoostCardMessage, WebcastBottomMessage, WebcastEmoteChatMessage,
+    WebcastGameRankNotifyMessage, WebcastGiftBroadcastMessage, WebcastGiftDynamicRestrictionMessage, WebcastGiftPromptMessage, WebcastHourlyRankMessage, WebcastLinkMicBattlePunishFinish, WebcastLinkMicFanTicketMethod,
+    WebcastLinkStateMessage, WebcastLinkmicBattleTaskMessage, WebcastLiveGameIntroMessage, WebcastMarqueeAnnouncementMessage, WebcastMsgDetectMessage, WebcastNoticeMessage, WebcastNotifyMessage,
+    WebcastOecLiveShoppingMessage, WebcastPartnershipDropsUpdateMessage, WebcastPartnershipGameOfflineMessage, WebcastPartnershipPunishMessage, WebcastPerceptionMessage, WebcastQuestionNewMessage,
+    WebcastRankTextMessage, WebcastRoomVerifyMessage, WebcastSpeakerMessage, WebcastSubCapsuleMessage, WebcastSubNotifyMessage, WebcastSubPinEventMessage, WebcastSubscriptionNotifyMessage, WebcastSystemMessage,
+    WebcastToastMessage, WebcastViewerPicksUpdateMessage,
 };
 
 /// Events received from a TikTok Live stream.
@@ -185,8 +174,7 @@ impl WebcastRoomUserSeqMessage {
     /// ranked by contribution score). Entries without a decoded user are
     /// skipped; the rest come back sorted by rank.
     pub fn top_viewers(&self) -> Vec<&Contributor> {
-        let mut top: Vec<&Contributor> =
-            self.ranks_list.iter().filter(|c| c.user.is_some()).collect();
+        let mut top: Vec<&Contributor> = self.ranks_list.iter().filter(|c| c.user.is_some()).collect();
         top.sort_by_key(|c| c.rank);
         top
     }

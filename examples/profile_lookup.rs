@@ -25,15 +25,8 @@ async fn main() {
 
         match cache.fetch(username).await {
             Ok(profile) => {
-                let room = if profile.room_id.is_empty() {
-                    "(offline)".to_string()
-                } else {
-                    profile.room_id.clone()
-                };
-                let link = profile
-                    .bio_link
-                    .as_deref()
-                    .unwrap_or("(none)");
+                let room = if profile.room_id.is_empty() { "(offline)".to_string() } else { profile.room_id.clone() };
+                let link = profile.bio_link.as_deref().unwrap_or("(none)");
 
                 println!("  User ID:    {}", profile.user_id);
                 println!("  Nickname:   {}", profile.nickname);

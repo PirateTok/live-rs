@@ -6,8 +6,8 @@
 //! Example:
 //!   cargo run --example online_check -- tiktok fakeuser999xyznotreal
 
-use piratetok_live_rs::http::api::{fetch_room_id, FetchParams};
 use piratetok_live_rs::errors::TikTokLiveError;
+use piratetok_live_rs::http::api::{fetch_room_id, FetchParams};
 
 #[tokio::main]
 async fn main() {

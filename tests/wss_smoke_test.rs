@@ -37,10 +37,7 @@ const WSS_MAX_RETRIES: u32 = 5;
 
 /// Returns the live test username, or `None` if the env var is unset/empty.
 fn live_user() -> Option<String> {
-    std::env::var("PIRATETOK_LIVE_TEST_USER")
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
+    std::env::var("PIRATETOK_LIVE_TEST_USER").ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
 
 /// Connects to the live room on a spawned task, consuming events until `predicate` fires
@@ -114,20 +111,12 @@ async fn connect_receives_traffic_before_timeout() {
     let hit = await_event(&user, AWAIT_TRAFFIC, |event| {
         matches!(
             event,
-            TikTokLiveEvent::RoomUserSeq(_)
-                | TikTokLiveEvent::Member(_)
-                | TikTokLiveEvent::Chat(_)
-                | TikTokLiveEvent::Like(_)
-                | TikTokLiveEvent::Control(_)
+            TikTokLiveEvent::RoomUserSeq(_) | TikTokLiveEvent::Member(_) | TikTokLiveEvent::Chat(_) | TikTokLiveEvent::Like(_) | TikTokLiveEvent::Control(_)
         )
     })
     .await;
 
-    assert!(
-        hit,
-        "no room traffic within {}s — is the user live? Check PIRATETOK_LIVE_TEST_USER",
-        AWAIT_TRAFFIC.as_secs()
-    );
+    assert!(hit, "no room traffic within {}s — is the user live? Check PIRATETOK_LIVE_TEST_USER", AWAIT_TRAFFIC.as_secs());
 }
 
 // ---- W2: chat ----
@@ -157,11 +146,7 @@ async fn connect_receives_chat_before_timeout() {
     })
     .await;
 
-    assert!(
-        hit,
-        "no chat message within {}s — try a busier stream",
-        AWAIT_CHAT.as_secs()
-    );
+    assert!(hit, "no chat message within {}s — try a busier stream", AWAIT_CHAT.as_secs());
 }
 
 // ---- W3: gift ----
@@ -184,10 +169,7 @@ async fn connect_receives_gift_before_timeout() {
         if let TikTokLiveEvent::Gift(msg) = event {
             let uid = msg.user.as_ref().map(|u| u.unique_id.as_str()).unwrap_or("?");
             let diamonds = msg.diamond_total();
-            eprintln!(
-                "[integration W3 gift] {uid} -> gift_id={} x{} ({} diamonds)",
-                msg.gift_id, msg.repeat_count, diamonds
-            );
+            eprintln!("[integration W3 gift] {uid} -> gift_id={} x{} ({} diamonds)", msg.gift_id, msg.repeat_count, diamonds);
             true
         } else {
             false
@@ -195,11 +177,7 @@ async fn connect_receives_gift_before_timeout() {
     })
     .await;
 
-    assert!(
-        hit,
-        "no gift within {}s — try a busier stream (gifts are less frequent than chat)",
-        AWAIT_GIFT.as_secs()
-    );
+    assert!(hit, "no gift within {}s — try a busier stream (gifts are less frequent than chat)", AWAIT_GIFT.as_secs());
 }
 
 // ---- W4: like ----
@@ -221,10 +199,7 @@ async fn connect_receives_like_before_timeout() {
     let hit = await_event(&user, AWAIT_LIKE, |event| {
         if let TikTokLiveEvent::Like(msg) = event {
             let uid = msg.user.as_ref().map(|u| u.unique_id.as_str()).unwrap_or("?");
-            eprintln!(
-                "[integration W4 like] {uid} count={} total={}",
-                msg.like_count, msg.total_like_count
-            );
+            eprintln!("[integration W4 like] {uid} count={} total={}", msg.like_count, msg.total_like_count);
             true
         } else {
             false
@@ -232,11 +207,7 @@ async fn connect_receives_like_before_timeout() {
     })
     .await;
 
-    assert!(
-        hit,
-        "no like within {}s — try a more active stream",
-        AWAIT_LIKE.as_secs()
-    );
+    assert!(hit, "no like within {}s — try a more active stream", AWAIT_LIKE.as_secs());
 }
 
 // ---- W5: join (sub-routed from MemberMessage) ----
@@ -268,11 +239,7 @@ async fn connect_receives_join_before_timeout() {
     })
     .await;
 
-    assert!(
-        hit,
-        "no join within {}s — try a busier stream",
-        AWAIT_JOIN.as_secs()
-    );
+    assert!(hit, "no join within {}s — try a busier stream", AWAIT_JOIN.as_secs());
 }
 
 // ---- W6: follow (sub-routed from SocialMessage) ----
@@ -305,11 +272,7 @@ async fn connect_receives_follow_before_timeout() {
     })
     .await;
 
-    assert!(
-        hit,
-        "no follow within {}s — follows are infrequent, try a growing stream",
-        AWAIT_FOLLOW.as_secs()
-    );
+    assert!(hit, "no follow within {}s — follows are infrequent, try a growing stream", AWAIT_FOLLOW.as_secs());
 }
 
 // ---- D1: disconnect lifecycle ----
@@ -375,9 +338,6 @@ async fn disconnect_unblocks_connect_task_after_connected() {
     let join_result = timeout(Duration::from_secs(18), connect_handle).await;
     let elapsed = t0.elapsed();
 
-    assert!(
-        join_result.is_ok(),
-        "connect task did not exit within 18s after abort — possible zombie task"
-    );
+    assert!(join_result.is_ok(), "connect task did not exit within 18s after abort — possible zombie task");
     eprintln!("[integration D1] task exited in {:.2}s after disconnect", elapsed.as_secs_f64());
 }

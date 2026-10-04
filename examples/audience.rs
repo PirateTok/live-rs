@@ -39,13 +39,7 @@ async fn main() {
     println!("room_id: {}  anchor_id: {}", room.room_id, room.anchor_id);
 
     // Source 1: full roster over HTTP (login-gated)
-    match fetch_room_audience(
-        &room.room_id,
-        Some(&room.anchor_id),
-        FetchParams { timeout, cookies, ..Default::default() },
-    )
-    .await
-    {
+    match fetch_room_audience(&room.room_id, Some(&room.anchor_id), FetchParams { timeout, cookies, ..Default::default() }).await {
         Ok(audience) => {
             println!();
             println!("=== Full roster: {} in room ({} anonymous) ===", audience.total, audience.anonymous);
@@ -61,10 +55,7 @@ async fn main() {
                     tags.push("sub");
                 }
                 let tags = if tags.is_empty() { String::new() } else { format!(" [{}]", tags.join(",")) };
-                println!(
-                    "  #{:<3} @{} ({}) score={} followers={}{}",
-                    v.rank, v.username, v.nickname, v.score, v.follower_count, tags
-                );
+                println!("  #{:<3} @{} ({}) score={} followers={}{}", v.rank, v.username, v.nickname, v.score, v.follower_count, tags);
             }
         }
         Err(e) => {
@@ -95,10 +86,7 @@ async fn main() {
                     println!("{} viewers (no top box in this update)", msg.viewer_count);
                     continue;
                 }
-                let names: Vec<String> = top
-                    .iter()
-                    .filter_map(|c| c.user.as_ref().map(|u| format!("#{} {} ({})", c.rank, u.nickname, c.score)))
-                    .collect();
+                let names: Vec<String> = top.iter().filter_map(|c| c.user.as_ref().map(|u| format!("#{} {} ({})", c.rank, u.nickname, c.score))).collect();
                 println!("{} viewers | top: {}", msg.viewer_count, names.join(" | "));
             }
             TikTokLiveEvent::Disconnected => break,

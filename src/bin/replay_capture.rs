@@ -23,9 +23,7 @@ use piratetok_live_rs::decode::mapper;
 use piratetok_live_rs::helpers::gift_streak::GiftStreakTracker;
 use piratetok_live_rs::helpers::like_accumulator::LikeAccumulator;
 use piratetok_live_rs::structs::proto::frames::WebcastPushFrame;
-use piratetok_live_rs::structs::proto::messages::{
-    WebcastGiftMessage, WebcastLikeMessage, WebcastResponse,
-};
+use piratetok_live_rs::structs::proto::messages::{WebcastGiftMessage, WebcastLikeMessage, WebcastResponse};
 use piratetok_live_rs::structs::TikTokLiveEvent;
 use piratetok_live_rs::websocket::frames::decompress_if_gzipped;
 
@@ -38,9 +36,7 @@ fn main() {
 
     let path = &args[1];
     let quiet = args.iter().any(|a| a == "--quiet");
-    let dump_dir = args.windows(2)
-        .find(|w| w[0] == "--dump-payloads")
-        .map(|w| w[1].clone());
+    let dump_dir = args.windows(2).find(|w| w[0] == "--dump-payloads").map(|w| w[1].clone());
 
     if let Some(ref dir) = dump_dir {
         std::fs::create_dir_all(dir).unwrap_or_else(|e| {
@@ -94,13 +90,7 @@ fn main() {
         *payload_type_counts.entry(frame.payload_type.clone()).or_default() += 1;
 
         if !quiet {
-            eprintln!(
-                "[frame {i}] type={:10} payload={} bytes  seq={} log={}",
-                frame.payload_type,
-                frame.payload.len(),
-                frame.seq_id,
-                frame.log_id
-            );
+            eprintln!("[frame {i}] type={:10} payload={} bytes  seq={} log={}", frame.payload_type, frame.payload.len(), frame.seq_id, frame.log_id);
         }
 
         if frame.payload_type != "msg" {
@@ -152,12 +142,7 @@ fn main() {
             let events = mapper::decode_message(&msg.r#type, &msg.payload);
 
             if !quiet {
-                eprintln!(
-                    "    {} ({} bytes) -> {} event(s)",
-                    msg.r#type,
-                    msg.payload.len(),
-                    events.len()
-                );
+                eprintln!("    {} ({} bytes) -> {} event(s)", msg.r#type, msg.payload.len(), events.len());
             }
 
             for event in &events {
@@ -290,23 +275,27 @@ fn main() {
         let backwards_count = like_events.iter().filter(|r| r.went_backwards).count();
         let last = like_events.last().unwrap();
         println!("  like events:       {}", like_events.len());
-        println!("  backwards jumps:   {backwards_count} ({:.1}%)",
-            backwards_count as f64 / like_events.len() as f64 * 100.0);
+        println!("  backwards jumps:   {backwards_count} ({:.1}%)", backwards_count as f64 / like_events.len() as f64 * 100.0);
         println!("  final wire max:    {}", last.acc_total);
         println!("  final accumulated: {}", last.acc_accumulated);
         println!("  drift:             {}", last.acc_total as i64 - last.acc_accumulated);
 
         // dump first 20 + any backwards for detailed inspection
         println!("\n  --- LIKE DETAIL (first 20 + all backwards) ---");
-        println!("  {:>6} {:>6} {:>10} {:>10} {:>12} {:>12} {}",
-            "idx", "frame", "delta", "wire_total", "acc_total", "accumulated", "");
+        println!("  {:>6} {:>6} {:>10} {:>10} {:>12} {:>12} {}", "idx", "frame", "delta", "wire_total", "acc_total", "accumulated", "");
         let mut printed = 0;
         for (li, row) in like_events.iter().enumerate() {
             if li < 20 || row.went_backwards {
-                println!("  {:>6} {:>6} {:>10} {:>10} {:>12} {:>12} {}",
-                    li, row.frame_idx, row.wire_count, row.wire_total,
-                    row.acc_total, row.acc_accumulated,
-                    if row.went_backwards { "<<<" } else { "" });
+                println!(
+                    "  {:>6} {:>6} {:>10} {:>10} {:>12} {:>12} {}",
+                    li,
+                    row.frame_idx,
+                    row.wire_count,
+                    row.wire_total,
+                    row.acc_total,
+                    row.acc_accumulated,
+                    if row.went_backwards { "<<<" } else { "" }
+                );
                 printed += 1;
             }
         }
@@ -342,22 +331,25 @@ fn main() {
         groups_sorted.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
 
         println!("\n  --- TOP GIFT STREAKS (by event count) ---");
-        println!("  {:>16} {:>6} {:>8} {:>10} {:>12} {:>8}",
-            "group_id", "events", "gift_id", "max_repeat", "diamonds", "final?");
+        println!("  {:>16} {:>6} {:>8} {:>10} {:>12} {:>8}", "group_id", "events", "gift_id", "max_repeat", "diamonds", "final?");
         for (gid, rows) in groups_sorted.iter().take(30) {
             let max_repeat = rows.iter().map(|r| r.repeat_count).max().unwrap_or(0);
             let total_diamonds = rows.last().map(|r| r.diamond_total).unwrap_or(0);
             let gift_id = rows[0].gift_id;
             let has_final = rows.iter().any(|r| r.streak_final);
-            println!("  {:>16} {:>6} {:>8} {:>10} {:>12} {:>8}",
-                gid, rows.len(), gift_id, max_repeat, total_diamonds,
-                if has_final { "yes" } else { "NO" });
+            println!(
+                "  {:>16} {:>6} {:>8} {:>10} {:>12} {:>8}",
+                gid,
+                rows.len(),
+                gift_id,
+                max_repeat,
+                total_diamonds,
+                if has_final { "yes" } else { "NO" }
+            );
         }
 
         // delta sanity: no negative deltas
-        let neg_deltas: Vec<_> = gift_events.iter()
-            .filter(|r| r.streak_delta < 0)
-            .collect();
+        let neg_deltas: Vec<_> = gift_events.iter().filter(|r| r.streak_delta < 0).collect();
         println!("\n  negative deltas: {}", neg_deltas.len());
         if !neg_deltas.is_empty() {
             println!("  FAIL: negative deltas detected!");

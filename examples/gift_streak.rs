@@ -18,7 +18,10 @@ async fn main() {
     let username = &args[1];
     let mut stream = match TikTokLive::builder(username).connect().await {
         Ok(s) => s,
-        Err(e) => { eprintln!("Error: {e}"); return; }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return;
+        }
     };
 
     let mut tracker = GiftStreakTracker::new();
@@ -32,19 +35,15 @@ async fn main() {
             TikTokLiveEvent::Gift(ref gift) => {
                 let e = tracker.process(gift);
 
-                let nick = gift.user.as_ref()
-                    .map(|u| u.nickname.as_str()).unwrap_or("?");
-                let name = gift.gift_details.as_ref()
-                    .map(|g| g.gift_name.as_str()).unwrap_or("?");
+                let nick = gift.user.as_ref().map(|u| u.nickname.as_str()).unwrap_or("?");
+                let name = gift.gift_details.as_ref().map(|g| g.gift_name.as_str()).unwrap_or("?");
 
                 if e.is_final {
                     total_diamonds += e.total_diamond_count;
-                    println!("[FINAL] streak={} {nick} -> {name} x{} — {} diamonds",
-                        e.streak_id, e.total_gift_count, e.total_diamond_count);
+                    println!("[FINAL] streak={} {nick} -> {name} x{} — {} diamonds", e.streak_id, e.total_gift_count, e.total_diamond_count);
                     println!("        running total: {total_diamonds} diamonds\n");
                 } else if e.event_gift_count > 0 {
-                    println!("[ongoing] streak={} {nick} -> {name} +{} (+{} dmnd)",
-                        e.streak_id, e.event_gift_count, e.event_diamond_count);
+                    println!("[ongoing] streak={} {nick} -> {name} +{} (+{} dmnd)", e.streak_id, e.event_gift_count, e.event_diamond_count);
                 }
             }
             TikTokLiveEvent::Disconnected => break,

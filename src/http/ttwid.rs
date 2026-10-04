@@ -13,10 +13,7 @@ const TIKTOK_URL: &str = "https://www.tiktok.com/";
 pub async fn fetch_ttwid(timeout: std::time::Duration, user_agent: Option<&str>, proxy: Option<&str>) -> Result<String, TikTokLiveError> {
     let ua = user_agent.unwrap_or_else(|| random_ua());
 
-    let mut builder = reqwest::Client::builder()
-        .timeout(timeout)
-        .user_agent(ua)
-        .redirect(reqwest::redirect::Policy::none());
+    let mut builder = reqwest::Client::builder().timeout(timeout).user_agent(ua).redirect(reqwest::redirect::Policy::none());
 
     if let Some(proxy_url) = proxy {
         builder = builder.proxy(reqwest::Proxy::all(proxy_url).map_err(TikTokLiveError::Http)?);
@@ -27,9 +24,7 @@ pub async fn fetch_ttwid(timeout: std::time::Duration, user_agent: Option<&str>,
     let resp = client.get(TIKTOK_URL).send().await?;
 
     for cookie_header in resp.headers().get_all("set-cookie") {
-        let value = cookie_header
-            .to_str()
-            .map_err(|e| TikTokLiveError::invalid(format!("set-cookie header: {e}")))?;
+        let value = cookie_header.to_str().map_err(|e| TikTokLiveError::invalid(format!("set-cookie header: {e}")))?;
 
         if let Some(ttwid) = extract_ttwid(value) {
             return Ok(ttwid);

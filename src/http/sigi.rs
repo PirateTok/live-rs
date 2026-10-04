@@ -41,20 +41,11 @@ pub struct SigiProfile {
 ///
 /// This is a stateless function — no caching. Use [`super::profile_cache::ProfileCache`]
 /// for cached access.
-pub async fn scrape_profile(
-    username: &str,
-    ttwid: &str,
-    timeout: std::time::Duration,
-    user_agent: Option<&str>,
-    proxy: Option<&str>,
-    cookies: Option<&str>,
-) -> Result<SigiProfile, TikTokLiveError> {
+pub async fn scrape_profile(username: &str, ttwid: &str, timeout: std::time::Duration, user_agent: Option<&str>, proxy: Option<&str>, cookies: Option<&str>) -> Result<SigiProfile, TikTokLiveError> {
     let clean = username.trim().trim_start_matches('@').to_lowercase();
     let ua = user_agent.unwrap_or_else(|| random_ua());
 
-    let mut builder = reqwest::Client::builder()
-        .timeout(timeout)
-        .user_agent(ua);
+    let mut builder = reqwest::Client::builder().timeout(timeout).user_agent(ua);
 
     if let Some(proxy_url) = proxy {
         builder = builder.proxy(reqwest::Proxy::all(proxy_url).map_err(TikTokLiveError::Http)?);
@@ -65,11 +56,7 @@ pub async fn scrape_profile(
     let cookie_header = match cookies {
         Some(c) => {
             // Strip user-provided ttwid so the cache-managed fresh one always wins
-            let filtered: String = c
-                .split("; ")
-                .filter(|pair| !pair.starts_with("ttwid="))
-                .collect::<Vec<_>>()
-                .join("; ");
+            let filtered: String = c.split("; ").filter(|pair| !pair.starts_with("ttwid=")).collect::<Vec<_>>().join("; ");
             if filtered.is_empty() {
                 format!("ttwid={ttwid}")
             } else {
@@ -97,10 +84,7 @@ pub async fn scrape_profile(
         .pointer("/__DEFAULT_SCOPE__/webapp.user-detail")
         .ok_or_else(|| TikTokLiveError::ProfileScrape("missing __DEFAULT_SCOPE__/webapp.user-detail".into()))?;
 
-    let status_code = user_detail
-        .get("statusCode")
-        .and_then(|v| v.as_i64())
-        .unwrap_or_default();
+    let status_code = user_detail.get("statusCode").and_then(|v| v.as_i64()).unwrap_or_default();
 
     match status_code {
         0 => {}
@@ -109,19 +93,11 @@ pub async fn scrape_profile(
         code => return Err(TikTokLiveError::ProfileError(code)),
     }
 
-    let user = user_detail
-        .pointer("/userInfo/user")
-        .ok_or_else(|| TikTokLiveError::ProfileScrape("missing userInfo.user".into()))?;
+    let user = user_detail.pointer("/userInfo/user").ok_or_else(|| TikTokLiveError::ProfileScrape("missing userInfo.user".into()))?;
 
-    let stats = user_detail
-        .pointer("/userInfo/stats")
-        .ok_or_else(|| TikTokLiveError::ProfileScrape("missing userInfo.stats".into()))?;
+    let stats = user_detail.pointer("/userInfo/stats").ok_or_else(|| TikTokLiveError::ProfileScrape("missing userInfo.stats".into()))?;
 
-    let bio_link = user
-        .pointer("/bioLink/link")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
+    let bio_link = user.pointer("/bioLink/link").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
 
     Ok(SigiProfile {
         user_id: str_field(user, "id"),
@@ -147,20 +123,14 @@ pub async fn scrape_profile(
 /// Extract the JSON string from the SIGI `<script>` tag via string searching.
 /// No regex, no HTML parser.
 fn extract_sigi_json(html: &str) -> Result<&str, TikTokLiveError> {
-    let marker_pos = html
-        .find(SIGI_MARKER)
-        .ok_or_else(|| TikTokLiveError::ProfileScrape("SIGI script tag not found in HTML".into()))?;
+    let marker_pos = html.find(SIGI_MARKER).ok_or_else(|| TikTokLiveError::ProfileScrape("SIGI script tag not found in HTML".into()))?;
 
     let after_marker = &html[marker_pos..];
-    let gt_offset = after_marker
-        .find('>')
-        .ok_or_else(|| TikTokLiveError::ProfileScrape("no > after SIGI marker".into()))?;
+    let gt_offset = after_marker.find('>').ok_or_else(|| TikTokLiveError::ProfileScrape("no > after SIGI marker".into()))?;
 
     let json_start = marker_pos + gt_offset + 1;
     let after_json = &html[json_start..];
-    let script_end = after_json
-        .find("</script>")
-        .ok_or_else(|| TikTokLiveError::ProfileScrape("no </script> after SIGI JSON".into()))?;
+    let script_end = after_json.find("</script>").ok_or_else(|| TikTokLiveError::ProfileScrape("no </script> after SIGI JSON".into()))?;
 
     let json_str = &html[json_start..json_start + script_end];
     if json_str.is_empty() {
@@ -171,10 +141,7 @@ fn extract_sigi_json(html: &str) -> Result<&str, TikTokLiveError> {
 }
 
 fn str_field(obj: &Value, key: &str) -> String {
-    obj.get(key)
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string()
+    obj.get(key).and_then(|v| v.as_str()).unwrap_or_default().to_string()
 }
 
 fn bool_field(obj: &Value, key: &str) -> bool {

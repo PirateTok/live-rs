@@ -11,8 +11,8 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use piratetok_live_rs::structs::config::CdnEndpoint;
@@ -44,11 +44,7 @@ async fn multiple_live_clients_track_chat_for_one_minute() {
         }
     };
 
-    let users: Vec<String> = users_raw
-        .split(',')
-        .map(|u| u.trim().to_string())
-        .filter(|u| !u.is_empty())
-        .collect();
+    let users: Vec<String> = users_raw.split(',').map(|u| u.trim().to_string()).filter(|u| !u.is_empty()).collect();
 
     assert!(!users.is_empty(), "PIRATETOK_LIVE_TEST_USERS must contain at least one username");
     eprintln!("[integration M1] starting {} clients: {:?}", users.len(), users);
@@ -143,11 +139,7 @@ async fn multiple_live_clients_track_chat_for_one_minute() {
     })
     .await;
 
-    assert!(
-        join_result.is_ok(),
-        "not all session tasks exited within {}s after disconnect",
-        SESSION_JOIN_TIMEOUT.as_secs()
-    );
+    assert!(join_result.is_ok(), "not all session tasks exited within {}s after disconnect", SESSION_JOIN_TIMEOUT.as_secs());
 
     // Report per-channel chat counts
     let mut chat_totals: HashMap<String, usize> = HashMap::new();

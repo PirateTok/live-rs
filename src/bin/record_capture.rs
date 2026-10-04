@@ -53,11 +53,16 @@ async fn main() {
 
     eprintln!("[record] resolving @{username}...");
     let ua = random_ua().to_string();
-    let room_id = match fetch_room_id(username, FetchParams {
-        timeout: Duration::from_secs(10),
-        user_agent: Some(&ua),
-        ..Default::default()
-    }).await {
+    let room_id = match fetch_room_id(
+        username,
+        FetchParams {
+            timeout: Duration::from_secs(10),
+            user_agent: Some(&ua),
+            ..Default::default()
+        },
+    )
+    .await
+    {
         Ok(r) => r.room_id,
         Err(e) => {
             eprintln!("[record] FATAL: {e}");
@@ -85,8 +90,7 @@ async fn main() {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     };
 
-    let host = ws_url.strip_prefix("wss://").unwrap_or(&ws_url)
-        .split('/').next().unwrap_or("webcast-ws.tiktok.com");
+    let host = ws_url.strip_prefix("wss://").unwrap_or(&ws_url).split('/').next().unwrap_or("webcast-ws.tiktok.com");
 
     let request = http::Request::builder()
         .method("GET")
@@ -134,7 +138,9 @@ async fn main() {
         while r2.load(Ordering::Relaxed) {
             interval.tick().await;
             if let Ok(hb) = build_heartbeat(&room_id_clone) {
-                if hb_tx.send(hb).await.is_err() { break; }
+                if hb_tx.send(hb).await.is_err() {
+                    break;
+                }
             }
         }
     });
@@ -183,12 +189,7 @@ async fn main() {
     print_stats(&output_path, &frame_count, &byte_count, start);
 }
 
-fn ctrlc_handler(
-    running: Arc<AtomicBool>,
-    frame_count: Arc<AtomicU64>,
-    byte_count: Arc<AtomicU64>,
-    output_path: PathBuf,
-) {
+fn ctrlc_handler(running: Arc<AtomicBool>, frame_count: Arc<AtomicU64>, byte_count: Arc<AtomicU64>, output_path: PathBuf) {
     let start = Instant::now();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.ok();
@@ -247,9 +248,6 @@ fn build_ws_url(room_id: &str, tz: &str) -> String {
         ("resp_content_type", "protobuf"),
         ("did_rule", "3"),
     ];
-    let query: String = params.iter()
-        .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
-        .collect::<Vec<_>>()
-        .join("&");
+    let query: String = params.iter().map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v))).collect::<Vec<_>>().join("&");
     format!("wss://webcast-ws.tiktok.com/webcast/im/ws_proxy/ws_reuse_supplement/?{query}")
 }

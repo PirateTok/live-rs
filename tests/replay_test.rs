@@ -14,9 +14,7 @@ use piratetok_live_rs::decode::mapper;
 use piratetok_live_rs::helpers::gift_streak::GiftStreakTracker;
 use piratetok_live_rs::helpers::like_accumulator::LikeAccumulator;
 use piratetok_live_rs::structs::proto::frames::WebcastPushFrame;
-use piratetok_live_rs::structs::proto::messages::{
-    WebcastGiftMessage, WebcastLikeMessage, WebcastResponse,
-};
+use piratetok_live_rs::structs::proto::messages::{WebcastGiftMessage, WebcastLikeMessage, WebcastResponse};
 use piratetok_live_rs::structs::TikTokLiveEvent;
 use piratetok_live_rs::websocket::frames::decompress_if_gzipped;
 
@@ -147,7 +145,7 @@ struct ReplayResult {
     join_count: u64,
     live_ended_count: u64,
     unknown_types: BTreeMap<String, u64>,
-    like_events: Vec<(i32, i64, i64, i64, bool)>, // (wire_count, wire_total, acc_total, accumulated, went_backwards)
+    like_events: Vec<(i32, i64, i64, i64, bool)>,                   // (wire_count, wire_total, acc_total, accumulated, went_backwards)
     gift_groups: BTreeMap<String, Vec<(i32, i32, i32, bool, i64)>>, // (gift_id, repeat_count, delta, is_final, diamond_total)
     combo_count: u64,
     non_combo_count: u64,
@@ -184,21 +182,32 @@ fn replay(frames: &[Vec<u8>]) -> ReplayResult {
     for raw in frames {
         let frame = match WebcastPushFrame::decode(raw.as_slice()) {
             Ok(f) => f,
-            Err(_) => { r.decode_failures += 1; continue; }
+            Err(_) => {
+                r.decode_failures += 1;
+                continue;
+            }
         };
 
         *r.payload_types.entry(frame.payload_type.clone()).or_default() += 1;
 
-        if frame.payload_type != "msg" { continue; }
+        if frame.payload_type != "msg" {
+            continue;
+        }
 
         let decompressed = match decompress_if_gzipped(&frame.payload) {
             Ok(d) => d,
-            Err(_) => { r.decompress_failures += 1; continue; }
+            Err(_) => {
+                r.decompress_failures += 1;
+                continue;
+            }
         };
 
         let response = match WebcastResponse::decode(decompressed.as_slice()) {
             Ok(resp) => resp,
-            Err(_) => { r.decode_failures += 1; continue; }
+            Err(_) => {
+                r.decode_failures += 1;
+                continue;
+            }
         };
 
         for msg in &response.messages {
@@ -226,31 +235,31 @@ fn replay(frames: &[Vec<u8>]) -> ReplayResult {
             if msg.r#type == "WebcastLikeMessage" {
                 if let Ok(like_msg) = WebcastLikeMessage::decode(msg.payload.as_slice()) {
                     let stats = like_acc.process(&like_msg);
-                    r.like_events.push((
-                        like_msg.like_count,
-                        like_msg.total_like_count,
-                        stats.total_like_count,
-                        stats.accumulated_count,
-                        stats.went_backwards,
-                    ));
+                    r.like_events
+                        .push((like_msg.like_count, like_msg.total_like_count, stats.total_like_count, stats.accumulated_count, stats.went_backwards));
                 }
             }
 
             if msg.r#type == "WebcastGiftMessage" {
                 if let Ok(gift_msg) = WebcastGiftMessage::decode(msg.payload.as_slice()) {
-                    if gift_msg.is_combo_gift() { r.combo_count += 1; } else { r.non_combo_count += 1; }
+                    if gift_msg.is_combo_gift() {
+                        r.combo_count += 1;
+                    } else {
+                        r.non_combo_count += 1;
+                    }
                     let streak = gift_tracker.process(&gift_msg);
-                    if streak.is_final { r.streak_finals += 1; }
-                    if streak.event_gift_count < 0 { r.negative_deltas += 1; }
+                    if streak.is_final {
+                        r.streak_finals += 1;
+                    }
+                    if streak.event_gift_count < 0 {
+                        r.negative_deltas += 1;
+                    }
 
                     let key = gift_msg.group_id.to_string();
-                    r.gift_groups.entry(key).or_default().push((
-                        gift_msg.gift_id,
-                        gift_msg.repeat_count,
-                        streak.event_gift_count,
-                        streak.is_final,
-                        streak.total_diamond_count,
-                    ));
+                    r.gift_groups
+                        .entry(key)
+                        .or_default()
+                        .push((gift_msg.gift_id, gift_msg.repeat_count, streak.event_gift_count, streak.is_final, streak.total_diamond_count));
                 }
             }
         }

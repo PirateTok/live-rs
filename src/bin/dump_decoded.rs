@@ -9,9 +9,8 @@ use prost::Message;
 
 use piratetok_live_rs::structs::proto::frames::WebcastPushFrame;
 use piratetok_live_rs::structs::proto::messages::{
-    WebcastCaptionMessage, WebcastChatMessage, WebcastControlMessage, WebcastGiftMessage,
-    WebcastImDeleteMessage, WebcastLikeMessage, WebcastLiveIntroMessage, WebcastMemberMessage,
-    WebcastResponse, WebcastRoomMessage, WebcastRoomUserSeqMessage, WebcastSocialMessage,
+    WebcastCaptionMessage, WebcastChatMessage, WebcastControlMessage, WebcastGiftMessage, WebcastImDeleteMessage, WebcastLikeMessage, WebcastLiveIntroMessage, WebcastMemberMessage, WebcastResponse, WebcastRoomMessage,
+    WebcastRoomUserSeqMessage, WebcastSocialMessage,
 };
 use piratetok_live_rs::websocket::frames::decompress_if_gzipped;
 
@@ -51,28 +50,14 @@ fn main() {
                 "WebcastChatMessage" => WebcastChatMessage::decode(msg.payload.as_slice()).is_ok(),
                 "WebcastGiftMessage" => WebcastGiftMessage::decode(msg.payload.as_slice()).is_ok(),
                 "WebcastLikeMessage" => WebcastLikeMessage::decode(msg.payload.as_slice()).is_ok(),
-                "WebcastMemberMessage" => {
-                    WebcastMemberMessage::decode(msg.payload.as_slice()).is_ok()
-                }
-                "WebcastSocialMessage" => {
-                    WebcastSocialMessage::decode(msg.payload.as_slice()).is_ok()
-                }
-                "WebcastRoomUserSeqMessage" => {
-                    WebcastRoomUserSeqMessage::decode(msg.payload.as_slice()).is_ok()
-                }
-                "WebcastControlMessage" => {
-                    WebcastControlMessage::decode(msg.payload.as_slice()).is_ok()
-                }
-                "WebcastCaptionMessage" => {
-                    WebcastCaptionMessage::decode(msg.payload.as_slice()).is_ok()
-                }
-                "WebcastLiveIntroMessage" => {
-                    WebcastLiveIntroMessage::decode(msg.payload.as_slice()).is_ok()
-                }
+                "WebcastMemberMessage" => WebcastMemberMessage::decode(msg.payload.as_slice()).is_ok(),
+                "WebcastSocialMessage" => WebcastSocialMessage::decode(msg.payload.as_slice()).is_ok(),
+                "WebcastRoomUserSeqMessage" => WebcastRoomUserSeqMessage::decode(msg.payload.as_slice()).is_ok(),
+                "WebcastControlMessage" => WebcastControlMessage::decode(msg.payload.as_slice()).is_ok(),
+                "WebcastCaptionMessage" => WebcastCaptionMessage::decode(msg.payload.as_slice()).is_ok(),
+                "WebcastLiveIntroMessage" => WebcastLiveIntroMessage::decode(msg.payload.as_slice()).is_ok(),
                 "WebcastRoomMessage" => WebcastRoomMessage::decode(msg.payload.as_slice()).is_ok(),
-                "WebcastImDeleteMessage" => {
-                    WebcastImDeleteMessage::decode(msg.payload.as_slice()).is_ok()
-                }
+                "WebcastImDeleteMessage" => WebcastImDeleteMessage::decode(msg.payload.as_slice()).is_ok(),
                 _ => true, // skip non-core types
             };
             if ok {

@@ -120,15 +120,7 @@ impl ProfileCache {
             (inner.proxy.clone(), inner.user_agent.clone(), inner.cookies.clone())
         };
 
-        let result = scrape_profile(
-            &key,
-            &ttwid,
-            SCRAPE_TIMEOUT,
-            user_agent.as_deref(),
-            proxy.as_deref(),
-            cookies.as_deref(),
-        )
-        .await;
+        let result = scrape_profile(&key, &ttwid, SCRAPE_TIMEOUT, user_agent.as_deref(), proxy.as_deref(), cookies.as_deref()).await;
 
         // Cache the result
         {
@@ -153,9 +145,7 @@ impl ProfileCache {
         let key = normalize_key(username);
         let inner = self.lock();
         match inner.entries.get(&key) {
-            Some(CacheEntry::Profile(profile, ts)) if ts.elapsed() < inner.ttl => {
-                Some(profile.clone())
-            }
+            Some(CacheEntry::Profile(profile, ts)) if ts.elapsed() < inner.ttl => Some(profile.clone()),
             _ => None,
         }
     }
@@ -204,12 +194,7 @@ fn normalize_key(username: &str) -> String {
 }
 
 fn is_negative_cacheable(err: &TikTokLiveError) -> bool {
-    matches!(
-        err,
-        TikTokLiveError::ProfilePrivate(_)
-            | TikTokLiveError::ProfileNotFound(_)
-            | TikTokLiveError::ProfileError(_)
-    )
+    matches!(err, TikTokLiveError::ProfilePrivate(_) | TikTokLiveError::ProfileNotFound(_) | TikTokLiveError::ProfileError(_))
 }
 
 fn clone_profile_error(err: &TikTokLiveError) -> TikTokLiveError {

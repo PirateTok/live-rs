@@ -38,7 +38,11 @@ fn tz_from_env() -> Option<String> {
     match std::env::var("TZ") {
         Ok(tz) => {
             let tz = tz.trim().to_string();
-            if !tz.is_empty() && tz.contains('/') { Some(tz) } else { None }
+            if !tz.is_empty() && tz.contains('/') {
+                Some(tz)
+            } else {
+                None
+            }
         }
         Err(_) => None,
     }
@@ -48,7 +52,11 @@ fn tz_from_etc_timezone() -> Option<String> {
     match std::fs::read_to_string("/etc/timezone") {
         Ok(content) => {
             let tz = content.trim().to_string();
-            if !tz.is_empty() && tz.contains('/') { Some(tz) } else { None }
+            if !tz.is_empty() && tz.contains('/') {
+                Some(tz)
+            } else {
+                None
+            }
         }
         Err(_) => None,
     }

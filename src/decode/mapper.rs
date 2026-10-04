@@ -110,7 +110,10 @@ fn decode_social(payload: &[u8], msg_type: &str) -> Vec<TikTokLiveEvent> {
         }
         Err(e) => {
             tracing::warn!("failed to decode {msg_type}: {e}");
-            vec![TikTokLiveEvent::Unknown { method: msg_type.to_string(), payload: payload.to_vec() }]
+            vec![TikTokLiveEvent::Unknown {
+                method: msg_type.to_string(),
+                payload: payload.to_vec(),
+            }]
         }
     }
 }
@@ -128,7 +131,10 @@ fn decode_member(payload: &[u8], msg_type: &str) -> Vec<TikTokLiveEvent> {
         }
         Err(e) => {
             tracing::warn!("failed to decode {msg_type}: {e}");
-            vec![TikTokLiveEvent::Unknown { method: msg_type.to_string(), payload: payload.to_vec() }]
+            vec![TikTokLiveEvent::Unknown {
+                method: msg_type.to_string(),
+                payload: payload.to_vec(),
+            }]
         }
     }
 }
@@ -146,7 +152,10 @@ fn decode_control(payload: &[u8], msg_type: &str) -> Vec<TikTokLiveEvent> {
         }
         Err(e) => {
             tracing::warn!("failed to decode {msg_type}: {e}");
-            vec![TikTokLiveEvent::Unknown { method: msg_type.to_string(), payload: payload.to_vec() }]
+            vec![TikTokLiveEvent::Unknown {
+                method: msg_type.to_string(),
+                payload: payload.to_vec(),
+            }]
         }
     }
 }

@@ -42,8 +42,7 @@ async fn main() {
 
     println!("=== LIKE STREAK DEBUG — @{username} ===");
     println!("Tracking per-user like events to detect streak patterns.\n");
-    println!("{:<6} {:<8} {:<20} {:<8} {:<8} {:<10} {}",
-        "#", "dt(s)", "user", "count", "prev", "gap(s)", "pattern");
+    println!("{:<6} {:<8} {:<20} {:<8} {:<8} {:<10} {}", "#", "dt(s)", "user", "count", "prev", "gap(s)", "pattern");
     println!("{}", "-".repeat(90));
 
     while let Some(event) = stream.next_event().await {
@@ -67,10 +66,7 @@ async fn main() {
                     None => "?".into(),
                 };
 
-                let entry = users.entry(uid.clone()).or_insert(UserStreak {
-                    events: Vec::new(),
-                    last_seen: 0.0,
-                });
+                let entry = users.entry(uid.clone()).or_insert(UserStreak { events: Vec::new(), last_seen: 0.0 });
 
                 let gap = elapsed - entry.last_seen;
                 let prev_count = entry.events.last().map(|e| e.1).unwrap_or(0);
@@ -97,8 +93,7 @@ async fn main() {
                 // truncate user name for display
                 let display_uid: String = uid.chars().take(18).collect();
 
-                println!("{:<6} {:<8.1} {:<20} {:<8} {:<8} {:<10.1} [#{event_num}] {}",
-                    event_count, elapsed, display_uid, count, prev_count, gap, pattern);
+                println!("{:<6} {:<8.1} {:<20} {:<8} {:<8} {:<10.1} [#{event_num}] {}", event_count, elapsed, display_uid, count, prev_count, gap, pattern);
             }
             TikTokLiveEvent::Disconnected => {
                 break;
@@ -109,9 +104,7 @@ async fn main() {
 
     // summary: show users with 3+ events so we can analyze their streak pattern
     println!("\n=== USERS WITH 3+ EVENTS (streak analysis) ===");
-    let mut multi: Vec<_> = users.iter()
-        .filter(|(_, s)| s.events.len() >= 3)
-        .collect();
+    let mut multi: Vec<_> = users.iter().filter(|(_, s)| s.events.len() >= 3).collect();
     multi.sort_by(|a, b| b.1.events.len().cmp(&a.1.events.len()));
 
     for (uid, streak) in &multi {
@@ -121,7 +114,9 @@ async fn main() {
         println!("\n  {} ({} events, naive_sum={})", display_uid, counts.len(), sum);
         print!("    counts: ");
         for (i, (t, c)) in streak.events.iter().enumerate() {
-            if i > 0 { print!(", "); }
+            if i > 0 {
+                print!(", ");
+            }
             print!("{c}@{t:.1}s");
         }
         println!();

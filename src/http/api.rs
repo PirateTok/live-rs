@@ -126,7 +126,10 @@ pub async fn fetch_room_id(username: &str, params: FetchParams<'_>) -> Result<Ro
 
     let anchor_id = json.pointer("/data/user/id").and_then(|v| v.as_str()).unwrap_or_default();
 
-    Ok(RoomIdResponse { room_id: room_id.to_string(), anchor_id: anchor_id.to_string() })
+    Ok(RoomIdResponse {
+        room_id: room_id.to_string(),
+        anchor_id: anchor_id.to_string(),
+    })
 }
 
 /// Fetch detailed room info: title, viewer counts, stream URLs.
@@ -166,9 +169,7 @@ pub async fn fetch_room_info(room_id: &str, params: FetchParams<'_>) -> Result<R
     match json.get("status_code").and_then(|v| v.as_i64()) {
         Some(0) => {}
         Some(4003110) => {
-            return Err(TikTokLiveError::AgeRestricted(
-                "18+ room — pass session cookies to fetch_room_info()".into(),
-            ));
+            return Err(TikTokLiveError::AgeRestricted("18+ room — pass session cookies to fetch_room_info()".into()));
         }
         Some(code) => {
             return Err(TikTokLiveError::invalid(format!("room/info status_code={code}")));
@@ -209,11 +210,7 @@ pub async fn fetch_room_info(room_id: &str, params: FetchParams<'_>) -> Result<R
 ///
 /// `anchor_id` is the streamer's user ID ([`RoomIdResponse::anchor_id`] gives
 /// it to you). Pass `None` to auto-resolve it from room info (one extra request).
-pub async fn fetch_room_audience(
-    room_id: &str,
-    anchor_id: Option<&str>,
-    params: FetchParams<'_>,
-) -> Result<RoomAudience, TikTokLiveError> {
+pub async fn fetch_room_audience(room_id: &str, anchor_id: Option<&str>, params: FetchParams<'_>) -> Result<RoomAudience, TikTokLiveError> {
     let anchor = match anchor_id {
         Some(a) => a.to_string(),
         None => {
@@ -248,9 +245,7 @@ pub async fn fetch_room_audience(
     match json.get("status_code").and_then(|v| v.as_i64()) {
         Some(0) => {}
         Some(20003) => {
-            return Err(TikTokLiveError::SessionRequired(
-                "audience roster needs login — pass session cookies to fetch_room_audience()".into(),
-            ));
+            return Err(TikTokLiveError::SessionRequired("audience roster needs login — pass session cookies to fetch_room_audience()".into()));
         }
         Some(code) => {
             let msg = json.pointer("/data/message").and_then(|v| v.as_str()).unwrap_or_default();
@@ -268,7 +263,12 @@ pub async fn fetch_room_audience(
         None => Vec::new(),
     };
 
-    Ok(RoomAudience { total, anonymous, viewers, raw_json: body })
+    Ok(RoomAudience {
+        total,
+        anonymous,
+        viewers,
+        raw_json: body,
+    })
 }
 
 fn parse_audience_viewer(rank: &Value) -> Option<AudienceViewer> {
@@ -278,9 +278,7 @@ fn parse_audience_viewer(rank: &Value) -> Option<AudienceViewer> {
         _ => user.get("id").and_then(|v| v.as_i64()).unwrap_or_default().to_string(),
     };
 
-    let str_of = |v: &Value, key: &str| -> String {
-        v.get(key).and_then(|x| x.as_str()).unwrap_or_default().to_string()
-    };
+    let str_of = |v: &Value, key: &str| -> String { v.get(key).and_then(|x| x.as_str()).unwrap_or_default().to_string() };
 
     Some(AudienceViewer {
         rank: rank.get("rank").and_then(|v| v.as_i64()).unwrap_or_default(),
@@ -289,10 +287,7 @@ fn parse_audience_viewer(rank: &Value) -> Option<AudienceViewer> {
         username: str_of(user, "display_id"),
         nickname: str_of(user, "nickname"),
         sec_uid: str_of(user, "sec_uid"),
-        avatar_url: user
-            .pointer("/avatar_thumb/url_list/0")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+        avatar_url: user.pointer("/avatar_thumb/url_list/0").and_then(|v| v.as_str()).map(|s| s.to_string()),
         follower_count: user.pointer("/follow_info/follower_count").and_then(|v| v.as_i64()).unwrap_or_default(),
         verified: user.get("verified").and_then(|v| v.as_bool()).unwrap_or_default(),
         is_follower: user.get("is_follower").and_then(|v| v.as_bool()).unwrap_or_default(),

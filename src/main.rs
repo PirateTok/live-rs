@@ -59,10 +59,7 @@ async fn main() {
                         Ok(info) => {
                             println!("[room] title=\"{}\" viewers={} likes={}", info.title, info.viewers, info.likes);
                             if let Some(urls) = &info.stream_url {
-                                let url = urls.flv_sd.as_deref()
-                                    .or(urls.flv_ld.as_deref())
-                                    .or(urls.flv_origin.as_deref())
-                                    .unwrap_or("n/a");
+                                let url = urls.flv_sd.as_deref().or(urls.flv_ld.as_deref()).or(urls.flv_origin.as_deref()).unwrap_or("n/a");
                                 println!("[stream] {url}");
                             }
                         }
