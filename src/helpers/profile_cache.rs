@@ -3,10 +3,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 use crate::errors::TikTokLiveError;
-use crate::http::sigi::{scrape_profile, SigiProfile};
+use crate::http::api::FetchParams;
+use crate::http::sigi::{normalize_username, scrape_profile, SigiProfile};
 use crate::http::ttwid::{fetch_ttwid, TtwidRequest};
 use crate::http::ua::random_ua;
-use crate::structs::config::{PROFILE_CACHE_TTL, PROFILE_SCRAPE_TIMEOUT, PROFILE_TTWID_TIMEOUT, TTWID_FETCH_ATTEMPTS, TTWID_RETRY_DELAY, TTWID_URL};
+use crate::structs::config::{Endpoints, PROFILE_CACHE_TTL, PROFILE_SCRAPE_TIMEOUT, PROFILE_TTWID_TIMEOUT, TTWID_FETCH_ATTEMPTS, TTWID_RETRY_DELAY};
 
 enum CacheEntry {
     Profile(SigiProfile, Instant),
@@ -26,6 +27,7 @@ struct CacheInner {
     proxy: Option<String>,
     user_agent: String,
     cookies: Option<String>,
+    endpoints: Endpoints,
 }
 
 #[derive(Clone)]
@@ -47,8 +49,14 @@ impl ProfileCache {
                 proxy: None,
                 user_agent: random_ua().to_string(),
                 cookies: None,
+                endpoints: Endpoints::tiktok(),
             })),
         }
+    }
+
+    pub fn endpoints(self, endpoints: Endpoints) -> Self {
+        self.lock().endpoints = endpoints;
+        self
     }
 
     pub fn proxy(self, url: impl Into<String>) -> Self {
@@ -75,12 +83,21 @@ impl ProfileCache {
         }
 
         let ttwid = self.ensure_ttwid().await?;
-        let (proxy, user_agent, cookies) = {
+        let (proxy, user_agent, cookies, endpoints) = {
             let inner = self.lock();
-            (inner.proxy.clone(), inner.user_agent.clone(), inner.cookies.clone())
+            (inner.proxy.clone(), inner.user_agent.clone(), inner.cookies.clone(), inner.endpoints.clone())
+        };
+        let params = FetchParams {
+            timeout: PROFILE_SCRAPE_TIMEOUT,
+            cookies: cookies.as_deref(),
+            user_agent: Some(&user_agent),
+            proxy: proxy.as_deref(),
+            language: None,
+            region: None,
+            endpoints: &endpoints,
         };
 
-        match scrape_profile(&key, &ttwid, PROFILE_SCRAPE_TIMEOUT, Some(&user_agent), proxy.as_deref(), cookies.as_deref()).await {
+        match scrape_profile(&key, &ttwid, &params).await {
             Ok(profile) => {
                 self.lock().entries.insert(key, CacheEntry::Profile(profile.clone(), Instant::now()));
                 Ok(profile)
@@ -129,16 +146,16 @@ impl ProfileCache {
     }
 
     async fn ensure_ttwid(&self) -> Result<String, TikTokLiveError> {
-        let (cached, proxy, user_agent) = {
+        let (cached, proxy, user_agent, web) = {
             let inner = self.lock();
-            (inner.ttwid.clone(), inner.proxy.clone(), inner.user_agent.clone())
+            (inner.ttwid.clone(), inner.proxy.clone(), inner.user_agent.clone(), inner.endpoints.web.clone())
         };
         for ttwid in cached.iter() {
             return Ok(ttwid.clone());
         }
 
         let request = TtwidRequest {
-            url: TTWID_URL,
+            url: &web,
             timeout: PROFILE_TTWID_TIMEOUT,
             user_agent: &user_agent,
             proxy: proxy.as_deref(),
@@ -168,7 +185,7 @@ enum FreshEntry {
 }
 
 fn normalize_key(username: &str) -> String {
-    username.trim().trim_start_matches('@').to_lowercase()
+    normalize_username(username)
 }
 
 fn is_negative_cacheable(err: &TikTokLiveError) -> bool {

@@ -1,14 +1,5 @@
 use std::fmt;
 
-/// Errors that can occur when connecting to or reading from a TikTok Live stream.
-///
-/// Most variants come from underlying network/decode layers. The ones you'll
-/// typically want to match on:
-///
-/// - [`UserNotFound`](TikTokLiveError::UserNotFound) — the username doesn't exist
-/// - [`HostNotOnline`](TikTokLiveError::HostNotOnline) — the user exists but isn't live
-/// - [`DeviceBlocked`](TikTokLiveError::DeviceBlocked) — ttwid was flagged, needs rotation
-/// - [`ConnectionClosed`](TikTokLiveError::ConnectionClosed) — WebSocket dropped
 #[derive(Debug, thiserror::Error)]
 pub enum TikTokLiveError {
     #[error("http: {0}")]
@@ -35,6 +26,12 @@ pub enum TikTokLiveError {
     #[error("room id missing from response")]
     RoomIdMissing,
 
+    #[error("tiktok api error: statusCode={0}")]
+    ApiError(i64),
+
+    #[error("tiktok blocked the request (ip/fingerprint, rate limit or geo block): {0}")]
+    TikTokBlocked(String),
+
     #[error("age-restricted stream: {0}")]
     AgeRestricted(String),
 
@@ -43,6 +40,9 @@ pub enum TikTokLiveError {
 
     #[error("device blocked — ttwid was flagged, fetch a fresh one")]
     DeviceBlocked,
+
+    #[error("proxy: {0}")]
+    Proxy(String),
 
     #[error("invalid response: {0}")]
     InvalidResponse(String),

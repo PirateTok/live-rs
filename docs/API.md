@@ -23,7 +23,8 @@ No signing server, no x_bogus, no msToken. Just ttwid.
 | `heartbeat_interval(Duration)` | 10 s | WSS heartbeat; also sent to TikTok as `heartbeat_duration`. |
 | `max_retries(u32)` | 5 | Consecutive failed attempts before `Disconnected`. `0` disables reconnection. A session that stays up 30 s resets the count. |
 | `stale_timeout(Duration)` | 60 s | No data for this long → close and reconnect. |
-| `proxy(url)` | none | HTTP/HTTPS/SOCKS5 for HTTP calls; WSS tunnels through HTTP CONNECT (http/https proxies). |
+| `proxy(url)` | none | `http://`, `https://` (HTTP CONNECT) or `socks5://` / `socks5h://`, optional `user:pass@`; applies to every HTTP call and to the WSS tunnel (`websocket::proxy::open_tunnel`). |
+| `endpoints(Endpoints)` | TikTok | Override `web` / `webcast` base URLs and the WSS base (`ws`, e.g. `ws://127.0.0.1:9000`) — local fakes, mirrors. |
 | `user_agent(ua)` | random pool | Fixed UA instead of the built-in pool. With the pool, a fresh UA is picked whenever the ttwid is rotated. |
 | `cookies(str)` | none | Session cookies appended next to ttwid in the WSS cookie header. For 18+ room info pass cookies to `fetch_room_info` instead. |
 | `language(code)` | system locale, `en` | API params + `Accept-Language`. |

@@ -1,11 +1,17 @@
 use std::fmt;
+use std::sync::LazyLock;
 use std::time::Duration;
+
+use reqwest::Url;
+use serde_json::Value;
 
 use crate::http::api::FetchParams;
 use crate::http::ttwid::TtwidRequest;
 use crate::http::ua::{random_ua, system_locale};
 
-pub const TTWID_URL: &str = "https://www.tiktok.com/";
+pub const TIKTOK_WEB_URL: &str = "https://www.tiktok.com/";
+pub const TIKTOK_WEBCAST_URL: &str = "https://webcast.tiktok.com/webcast/";
+pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 pub const PROFILE_CACHE_TTL: Duration = Duration::from_secs(300);
 pub const PROFILE_TTWID_TIMEOUT: Duration = Duration::from_secs(10);
 pub const PROFILE_SCRAPE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -14,6 +20,28 @@ pub const TTWID_RETRY_DELAY: Duration = Duration::from_millis(750);
 pub const HEALTHY_SESSION: Duration = Duration::from_secs(30);
 pub const DEVICE_BLOCKED_DELAY: Duration = Duration::from_secs(2);
 pub const MAX_BACKOFF: Duration = Duration::from_secs(30);
+pub const HTTP_PROXY_DEFAULT_PORT: u16 = 8080;
+pub const HTTPS_PROXY_DEFAULT_PORT: u16 = 443;
+pub const SOCKS5_DEFAULT_PORT: u16 = 1080;
+
+pub static TIKTOK_ENDPOINTS: LazyLock<Endpoints> = LazyLock::new(Endpoints::tiktok);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Endpoints {
+    pub web: String,
+    pub webcast: String,
+    pub ws: Option<String>,
+}
+
+impl Endpoints {
+    pub fn tiktok() -> Self {
+        Self {
+            web: TIKTOK_WEB_URL.to_string(),
+            webcast: TIKTOK_WEBCAST_URL.to_string(),
+            ws: None,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub enum CdnEndpoint {
@@ -53,6 +81,7 @@ pub struct TikTokLiveConfig {
     pub language: String,
     pub region: String,
     pub compress: bool,
+    pub endpoints: Endpoints,
 }
 
 impl TikTokLiveConfig {
@@ -61,7 +90,7 @@ impl TikTokLiveConfig {
         Self {
             username: username.into(),
             cdn: CdnEndpoint::default(),
-            timeout: Duration::from_secs(10),
+            timeout: HTTP_TIMEOUT,
             heartbeat_interval: Duration::from_secs(10),
             max_retries: 5,
             stale_timeout: Duration::from_secs(60),
@@ -71,6 +100,7 @@ impl TikTokLiveConfig {
             language,
             region,
             compress: true,
+            endpoints: Endpoints::tiktok(),
         }
     }
 
@@ -96,9 +126,16 @@ impl TikTokLiveConfig {
         }
     }
 
+    pub fn ws_base(&self) -> String {
+        match &self.endpoints.ws {
+            Some(base) => base.trim_end_matches('/').to_string(),
+            None => format!("wss://{}", self.cdn.host()),
+        }
+    }
+
     pub fn ttwid_request<'a>(&'a self, user_agent: &'a str) -> TtwidRequest<'a> {
         TtwidRequest {
-            url: TTWID_URL,
+            url: &self.endpoints.web,
             timeout: self.timeout,
             user_agent,
             proxy: self.proxy.as_deref(),
@@ -115,7 +152,79 @@ impl TikTokLiveConfig {
             proxy: self.proxy.as_deref(),
             language: Some(&self.language),
             region: Some(&self.region),
+            endpoints: &self.endpoints,
         }
+    }
+}
+
+impl Default for FetchParams<'_> {
+    fn default() -> Self {
+        Self {
+            timeout: HTTP_TIMEOUT,
+            cookies: None,
+            user_agent: None,
+            proxy: None,
+            language: None,
+            region: None,
+            endpoints: &TIKTOK_ENDPOINTS,
+        }
+    }
+}
+
+pub struct Locale {
+    pub language: String,
+    pub region: String,
+    pub browser_language: String,
+}
+
+pub fn fetch_locale(params: &FetchParams<'_>) -> Locale {
+    let (system_language, system_region) = system_locale();
+    let language = match params.language {
+        Some(l) => l.to_string(),
+        None => system_language,
+    };
+    let region = match params.region {
+        Some(r) => r.to_string(),
+        None => system_region,
+    };
+    let browser_language = format!("{language}-{region}");
+    Locale { language, region, browser_language }
+}
+
+pub fn fetch_user_agent(params: &FetchParams<'_>) -> String {
+    match params.user_agent {
+        Some(ua) => ua.to_string(),
+        None => random_ua().to_string(),
+    }
+}
+
+pub fn proxy_port(url: &Url) -> u16 {
+    match (url.port(), url.scheme()) {
+        (Some(port), _) => port,
+        (None, "https") => HTTPS_PROXY_DEFAULT_PORT,
+        (None, "socks5" | "socks5h") => SOCKS5_DEFAULT_PORT,
+        (None, _) => HTTP_PROXY_DEFAULT_PORT,
+    }
+}
+
+pub fn json_str(v: &Value, pointer: &str) -> String {
+    match v.pointer(pointer).and_then(Value::as_str) {
+        Some(s) => s.to_string(),
+        None => String::new(),
+    }
+}
+
+pub fn json_i64(v: &Value, pointer: &str) -> i64 {
+    match v.pointer(pointer).and_then(Value::as_i64) {
+        Some(n) => n,
+        None => 0,
+    }
+}
+
+pub fn json_bool(v: &Value, pointer: &str) -> bool {
+    match v.pointer(pointer).and_then(Value::as_bool) {
+        Some(b) => b,
+        None => false,
     }
 }
 

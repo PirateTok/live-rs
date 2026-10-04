@@ -12,7 +12,7 @@
 //! Without cookies you only get source 2. With cookies you get both:
 //!   cargo run --example audience -- username "sessionid=abc; sid_tt=abc"
 
-use piratetok_live_rs::http::api::{fetch_room_audience, fetch_room_id, FetchParams};
+use piratetok_live_rs::http::api::{fetch_room_audience, fetch_room_id, AnchorId, FetchParams};
 use piratetok_live_rs::structs::TikTokLiveEvent;
 use piratetok_live_rs::TikTokLive;
 
@@ -39,7 +39,7 @@ async fn main() {
     println!("room_id: {}  anchor_id: {}", room.room_id, room.anchor_id);
 
     // Source 1: full roster over HTTP (login-gated)
-    match fetch_room_audience(&room.room_id, Some(&room.anchor_id), FetchParams { timeout, cookies, ..Default::default() }).await {
+    match fetch_room_audience(&room.room_id, AnchorId::Known(&room.anchor_id), FetchParams { timeout, cookies, ..Default::default() }).await {
         Ok(audience) => {
             println!();
             println!("=== Full roster: {} in room ({} anonymous) ===", audience.total, audience.anonymous);

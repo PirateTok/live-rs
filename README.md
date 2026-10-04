@@ -82,7 +82,7 @@ TikTokLive::builder("username_here")
     .heartbeat_interval(Duration::from_secs(10))  // default 10s
     .max_retries(10)             // default 5, 0 to disable
     .stale_timeout(Duration::from_secs(90))  // default 60s
-    .proxy("socks5://127.0.0.1:1080")        // HTTP/HTTPS/SOCKS5 proxy for all connections
+    .proxy("socks5://user:pass@127.0.0.1:1080") // http(s)://, socks5://, socks5h:// (+ user:pass) for HTTP and WSS
     .user_agent("Mozilla/5.0 ...")            // override random UA pool with a fixed UA
     .cookies("sessionid=abc; sid_tt=abc")     // session cookies appended alongside ttwid
     .language("de")              // override auto-detected language (default from system locale)
@@ -123,10 +123,10 @@ TikTokLiveEvent::RoomUserSeq(msg) => {
 
 ```rust
 // 2. Full roster (every named viewer in the room) — HTTP, login-gated
-use piratetok_live_rs::http::api::{fetch_room_id, fetch_room_audience, FetchParams};
+use piratetok_live_rs::http::api::{fetch_room_id, fetch_room_audience, AnchorId, FetchParams};
 
 let room = fetch_room_id("username", FetchParams::default()).await?;
-let audience = fetch_room_audience(&room.room_id, Some(&room.anchor_id), FetchParams {
+let audience = fetch_room_audience(&room.room_id, AnchorId::Known(&room.anchor_id), FetchParams {
     cookies: Some("sessionid=abc; sid_tt=abc"), ..Default::default()
 }).await?;
 println!("{} in room ({} anonymous)", audience.total, audience.anonymous);
@@ -138,6 +138,15 @@ for v in &audience.viewers {
 The roster endpoint needs session cookies (TikTok gates it behind login) but no
 signing — no msToken, no X-Bogus. Without cookies it returns
 `TikTokLiveError::SessionRequired`.
+
+## Errors from `fetch_room_id` / `connect`
+
+| Condition | Error |
+|---|---|
+| `statusCode` 19881007 | `UserNotFound(username)` |
+| user exists, no active room / status ≠ 2 | `HostNotOnline` |
+| other non-zero `statusCode` | `ApiError(code)` |
+| HTTP 403/429, empty or non-JSON body | `TikTokBlocked(reason)` |
 
 ## Gift streaks
 

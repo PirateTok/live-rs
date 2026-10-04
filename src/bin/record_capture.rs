@@ -23,7 +23,7 @@ use piratetok_live_rs::errors::TikTokLiveError;
 use piratetok_live_rs::http::api::{fetch_room_id, FetchParams};
 use piratetok_live_rs::http::ttwid::{fetch_ttwid, TtwidRequest};
 use piratetok_live_rs::http::ua::{random_ua, system_timezone};
-use piratetok_live_rs::structs::config::{CdnEndpoint, TTWID_FETCH_ATTEMPTS, TTWID_RETRY_DELAY, TTWID_URL};
+use piratetok_live_rs::structs::config::{CdnEndpoint, TIKTOK_WEB_URL, TTWID_FETCH_ATTEMPTS, TTWID_RETRY_DELAY};
 use piratetok_live_rs::websocket::frames::{build_enter_room, build_heartbeat};
 
 type WsMessage = tokio_tungstenite::tungstenite::Message;
@@ -95,7 +95,7 @@ async fn resolve_room(username: &str, ua: &str) -> String {
 async fn acquire_ttwid(ua: &str) -> String {
     eprintln!("[record] fetching ttwid...");
     let request = TtwidRequest {
-        url: TTWID_URL,
+        url: TIKTOK_WEB_URL,
         timeout: Duration::from_secs(10),
         user_agent: ua,
         proxy: None,

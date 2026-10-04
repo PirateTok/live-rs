@@ -9,9 +9,9 @@ use crate::http::api::fetch_room_id;
 use crate::http::ttwid::fetch_ttwid;
 use crate::http::ua::system_timezone;
 use crate::reconnect::{judge, AttemptEnd, ReconnectBudget, SessionAction, SessionExit, Verdict};
-use crate::structs::config::{CdnEndpoint, TikTokLiveConfig};
+use crate::structs::config::{CdnEndpoint, Endpoints, TikTokLiveConfig};
 use crate::structs::TikTokLiveEvent;
-use crate::websocket::connection::run_websocket;
+use crate::websocket::connection::{run_websocket, WsSession};
 
 pub struct TikTokLive;
 
@@ -78,6 +78,11 @@ impl TikTokLiveBuilder {
 
     pub fn compress(mut self, compress: bool) -> Self {
         self.config.compress = compress;
+        self
+    }
+
+    pub fn endpoints(mut self, endpoints: Endpoints) -> Self {
+        self.config.endpoints = endpoints;
         self
     }
 
@@ -178,18 +183,17 @@ async fn run_attempt(config: &TikTokLiveConfig, room_id: &str, tz: &str, credent
     let ws_url = build_ws_url(room_id, tz, config);
     let cookie = config.ws_cookie(&session.ttwid);
     let accept_language = config.accept_language();
-    let result = run_websocket(
-        &ws_url,
-        &cookie,
-        &session.user_agent,
+    let ws_session = WsSession {
+        url: &ws_url,
+        cookies: &cookie,
+        user_agent: &session.user_agent,
         room_id,
-        config.heartbeat_interval,
-        config.stale_timeout,
-        config.proxy.as_deref(),
-        &accept_language,
-        tx.clone(),
-    )
-    .await;
+        heartbeat_interval: config.heartbeat_interval,
+        stale_timeout: config.stale_timeout,
+        proxy: config.proxy.as_deref(),
+        accept_language: &accept_language,
+    };
+    let result = run_websocket(&ws_session, tx.clone()).await;
     let lived = started.elapsed();
 
     let exit = match result {
@@ -275,5 +279,5 @@ fn build_ws_url(room_id: &str, tz: &str, config: &TikTokLiveConfig) -> String {
 
     let query: String = params.iter().map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v))).collect::<Vec<_>>().join("&");
 
-    format!("wss://{}/webcast/im/ws_proxy/ws_reuse_supplement/?{query}", config.cdn.host())
+    format!("{}/webcast/im/ws_proxy/ws_reuse_supplement/?{query}", config.ws_base())
 }

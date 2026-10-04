@@ -1,13 +1,13 @@
+use std::fmt::Display;
 use std::time::Duration;
 
 use base64::Engine;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{Sink, SinkExt, StreamExt};
 use prost::Message;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use reqwest::Url;
 use tokio::sync::mpsc;
-use tokio::time::interval;
-use tracing::{debug, error, info, warn};
+use tokio::time::{interval, Instant};
+use tracing::{debug, info};
 
 use crate::decode::mapper;
 use crate::errors::TikTokLiveError;
@@ -15,283 +15,201 @@ use crate::structs::proto::frames::WebcastPushFrame;
 use crate::structs::proto::messages::WebcastResponse;
 use crate::structs::TikTokLiveEvent;
 use crate::websocket::frames::{build_ack, build_enter_room, build_heartbeat, decompress_if_gzipped};
+use crate::websocket::proxy::open_tunnel;
 
 type WsMessage = tokio_tungstenite::tungstenite::Message;
+type WsError = tokio_tungstenite::tungstenite::Error;
 
-pub async fn run_websocket(
-    ws_url: &str,
-    cookies: &str,
-    user_agent: &str,
-    room_id: &str,
-    heartbeat_interval: Duration,
-    stale_timeout: Duration,
-    proxy: Option<&str>,
-    accept_language: &str,
-    tx: mpsc::Sender<TikTokLiveEvent>,
-) -> Result<(), TikTokLiveError> {
-    let host = url_host(ws_url)?;
-    let ws_key = generate_ws_key();
-
-    let request = http::Request::builder()
-        .method("GET")
-        .uri(ws_url)
-        .header("Host", &host)
-        .header("Upgrade", "websocket")
-        .header("Connection", "Upgrade")
-        .header("Sec-WebSocket-Key", &ws_key)
-        .header("Sec-WebSocket-Version", "13")
-        .header("User-Agent", user_agent)
-        .header("Referer", "https://www.tiktok.com/")
-        .header("Origin", "https://www.tiktok.com")
-        .header("Accept-Language", accept_language)
-        .header("Accept-Encoding", "gzip, deflate")
-        .header("Cache-Control", "no-cache")
-        .header("Cookie", cookies)
-        .body(())
-        .map_err(|e| TikTokLiveError::invalid(format!("ws request build: {e}")))?;
-
-    if let Some(proxy_url) = proxy {
-        let tunnel = connect_proxy_tunnel(proxy_url, &host).await?;
-        let (ws_stream, _) = handle_ws_handshake(tokio_tungstenite::client_async_tls_with_config(request, tunnel, None, None).await)?;
-        ws_event_loop(ws_stream, room_id, heartbeat_interval, stale_timeout, tx).await
-    } else {
-        let (ws_stream, _) = handle_ws_handshake(tokio_tungstenite::connect_async(request).await)?;
-        ws_event_loop(ws_stream, room_id, heartbeat_interval, stale_timeout, tx).await
-    }
+pub struct WsSession<'a> {
+    pub url: &'a str,
+    pub cookies: &'a str,
+    pub user_agent: &'a str,
+    pub room_id: &'a str,
+    pub heartbeat_interval: Duration,
+    pub stale_timeout: Duration,
+    pub proxy: Option<&'a str>,
+    pub accept_language: &'a str,
 }
 
-fn handle_ws_handshake<S>(
-    result: Result<(tokio_tungstenite::WebSocketStream<S>, http::Response<Option<Vec<u8>>>), tokio_tungstenite::tungstenite::Error>,
-) -> Result<(tokio_tungstenite::WebSocketStream<S>, http::Response<Option<Vec<u8>>>), TikTokLiveError> {
+enum Flow {
+    Continue,
+    Stop,
+}
+
+pub async fn run_websocket(session: &WsSession<'_>, tx: mpsc::Sender<TikTokLiveEvent>) -> Result<(), TikTokLiveError> {
+    let url = Url::parse(session.url).map_err(|e| TikTokLiveError::InvalidUrl(format!("{}: {e}", session.url)))?;
+    let Some(host) = url.host_str() else {
+        return Err(TikTokLiveError::InvalidUrl(format!("no host in {}", session.url)));
+    };
+    let Some(port) = url.port_or_known_default() else {
+        return Err(TikTokLiveError::InvalidUrl(format!("no port for {}", session.url)));
+    };
+    let mut authority = host.to_string();
+    for explicit in url.port().iter() {
+        authority.push_str(&format!(":{explicit}"));
+    }
+    let request = build_request(session, &authority)?;
+
+    for proxy in session.proxy.iter() {
+        let tunnel = open_tunnel(proxy, host, port).await?;
+        let (ws, _response) = handshake(tokio_tungstenite::client_async_tls_with_config(request, tunnel, None, None).await)?;
+        return event_loop(ws, session, tx).await;
+    }
+    let (ws, _response) = handshake(tokio_tungstenite::connect_async(request).await)?;
+    event_loop(ws, session, tx).await
+}
+
+fn build_request(session: &WsSession<'_>, authority: &str) -> Result<http::Request<()>, TikTokLiveError> {
+    let key_bytes: [u8; 16] = rand::random();
+    http::Request::builder()
+        .method("GET")
+        .uri(session.url)
+        .header("Host", authority)
+        .header("Upgrade", "websocket")
+        .header("Connection", "Upgrade")
+        .header("Sec-WebSocket-Key", base64::engine::general_purpose::STANDARD.encode(key_bytes))
+        .header("Sec-WebSocket-Version", "13")
+        .header("User-Agent", session.user_agent)
+        .header("Referer", "https://www.tiktok.com/")
+        .header("Origin", "https://www.tiktok.com")
+        .header("Accept-Language", session.accept_language)
+        .header("Accept-Encoding", "gzip, deflate")
+        .header("Cache-Control", "no-cache")
+        .header("Cookie", session.cookies)
+        .body(())
+        .map_err(|e| TikTokLiveError::invalid(format!("ws request build: {e}")))
+}
+
+fn handshake<T>(result: Result<T, WsError>) -> Result<T, TikTokLiveError> {
     match result {
         Ok(pair) => Ok(pair),
-        Err(tokio_tungstenite::tungstenite::Error::Http(resp)) => {
-            let handshake_msg = extract_header(&resp, "Handshake-Msg");
-
-            if handshake_msg == "DEVICE_BLOCKED" {
-                return Err(TikTokLiveError::DeviceBlocked);
+        Err(WsError::Http(resp)) => {
+            let status = resp.status();
+            match resp.headers().get("Handshake-Msg").map(|v| v.as_bytes()) {
+                Some(b"DEVICE_BLOCKED") => Err(TikTokLiveError::DeviceBlocked),
+                Some(msg) => Err(TikTokLiveError::invalid(format!("handshake rejected: http {status} handshake-msg={msg:?}"))),
+                None => Err(TikTokLiveError::invalid(format!("handshake rejected: http {status}"))),
             }
-
-            let handshake_status = extract_header(&resp, "Handshake-Status");
-
-            Err(TikTokLiveError::invalid(format!("handshake rejected: msg={handshake_msg} status={handshake_status}")))
         }
         Err(e) => Err(e.into()),
     }
 }
 
-async fn ws_event_loop<S>(ws_stream: tokio_tungstenite::WebSocketStream<S>, room_id: &str, heartbeat_interval: Duration, stale_timeout: Duration, tx: mpsc::Sender<TikTokLiveEvent>) -> Result<(), TikTokLiveError>
+async fn event_loop<S>(ws: tokio_tungstenite::WebSocketStream<S>, session: &WsSession<'_>, tx: mpsc::Sender<TikTokLiveEvent>) -> Result<(), TikTokLiveError>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    let (mut write, mut read) = ws_stream.split();
-
+    let (mut write, mut read) = ws.split();
     info!("websocket connected");
+    write.send(WsMessage::Binary(build_heartbeat(session.room_id)?.into())).await?;
+    write.send(WsMessage::Binary(build_enter_room(session.room_id)?.into())).await?;
 
-    let hb_bytes = build_heartbeat(room_id)?;
-    write.send(WsMessage::Binary(hb_bytes.into())).await?;
-
-    let enter_bytes = build_enter_room(room_id)?;
-    write.send(WsMessage::Binary(enter_bytes.into())).await?;
-
-    let mut heartbeat_tick = interval(heartbeat_interval);
-    heartbeat_tick.tick().await; // skip first immediate tick
-
-    let room_id_owned = room_id.to_string();
-
-    let stale_sleep = tokio::time::sleep(stale_timeout);
-    tokio::pin!(stale_sleep);
+    let mut heartbeat = interval(session.heartbeat_interval);
+    heartbeat.tick().await;
+    let stale = tokio::time::sleep(session.stale_timeout);
+    tokio::pin!(stale);
 
     loop {
         tokio::select! {
-            _ = heartbeat_tick.tick() => {
-                let hb = build_heartbeat(&room_id_owned)?;
-                if let Err(e) = write.send(WsMessage::Binary(hb.into())).await {
-                    error!("heartbeat send failed: {e}");
-                    break;
+            _tick = heartbeat.tick() => {
+                match write.send(WsMessage::Binary(build_heartbeat(session.room_id)?.into())).await {
+                    Ok(()) => debug!("heartbeat sent"),
+                    Err(e) => {
+                        tracing::error!(error = %e, "heartbeat send failed");
+                        break;
+                    }
                 }
-                debug!("heartbeat sent");
             }
-            _ = &mut stale_sleep => {
-                info!("stale: no data for {:?}, closing", stale_timeout);
+            () = &mut stale => {
+                info!("stale: no data for {:?}, closing", session.stale_timeout);
                 break;
             }
             msg = read.next() => {
-                // Reset stale timer on any message
-                stale_sleep.as_mut().reset(tokio::time::Instant::now() + stale_timeout);
-
-                match msg {
-                    Some(Ok(WsMessage::Binary(data))) => {
-                        if let Err(e) = process_binary(&data, &mut write, &tx).await {
-                            warn!("frame processing error: {e}");
-                        }
-                    }
-                    Some(Ok(WsMessage::Ping(data))) => {
-                        let _ = write.send(WsMessage::Pong(data)).await;
-                    }
-                    Some(Ok(WsMessage::Close(_))) => {
-                        info!("server sent close frame");
-                        break;
-                    }
-                    Some(Err(e)) => {
-                        error!("websocket read error: {e}");
-                        break;
-                    }
-                    None => {
-                        info!("websocket stream ended");
-                        break;
-                    }
-                    _ => {}
+                stale.as_mut().reset(Instant::now() + session.stale_timeout);
+                match handle(msg, &mut write, &tx).await {
+                    Flow::Continue => {}
+                    Flow::Stop => break,
                 }
             }
         }
     }
-
     Ok(())
 }
 
-async fn process_binary<S>(data: &[u8], write: &mut S, tx: &mpsc::Sender<TikTokLiveEvent>) -> Result<(), TikTokLiveError>
+async fn handle<W>(msg: Option<Result<WsMessage, WsError>>, write: &mut W, tx: &mpsc::Sender<TikTokLiveEvent>) -> Flow
 where
-    S: SinkExt<WsMessage> + Unpin,
-    S::Error: std::fmt::Display,
+    W: Sink<WsMessage> + Unpin,
+    W::Error: Display,
+{
+    let Some(msg) = msg else {
+        info!("websocket stream ended");
+        return Flow::Stop;
+    };
+    match msg {
+        Ok(WsMessage::Binary(data)) => match process_binary(&data, write, tx).await {
+            Ok(()) => Flow::Continue,
+            Err(TikTokLiveError::ConnectionClosed) => {
+                tracing::warn!("event receiver dropped, closing websocket");
+                Flow::Stop
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "frame processing error");
+                Flow::Continue
+            }
+        },
+        Ok(WsMessage::Ping(data)) => match write.send(WsMessage::Pong(data)).await {
+            Ok(()) => Flow::Continue,
+            Err(e) => {
+                tracing::warn!(error = %e, "pong send failed");
+                Flow::Stop
+            }
+        },
+        Ok(WsMessage::Close(frame)) => {
+            info!(?frame, "server sent close frame");
+            Flow::Stop
+        }
+        Ok(WsMessage::Text(..) | WsMessage::Pong(..) | WsMessage::Frame(..)) => Flow::Continue,
+        Err(e) => {
+            tracing::error!(error = %e, "websocket read error");
+            Flow::Stop
+        }
+    }
+}
+
+async fn process_binary<W>(data: &[u8], write: &mut W, tx: &mpsc::Sender<TikTokLiveEvent>) -> Result<(), TikTokLiveError>
+where
+    W: Sink<WsMessage> + Unpin,
+    W::Error: Display,
 {
     let frame = WebcastPushFrame::decode(data)?;
-
     match frame.payload_type.as_str() {
-        "msg" => {
-            let decompressed = decompress_if_gzipped(&frame.payload)?;
-            let response = WebcastResponse::decode(decompressed.as_slice())?;
-
-            if response.needs_ack && !response.internal_ext.is_empty() {
-                let ack = build_ack(frame.log_id, response.internal_ext.as_bytes())?;
-                let _ = write.send(WsMessage::Binary(ack.into())).await;
-            }
-
-            for message in &response.messages {
-                let events = mapper::decode_message(&message.r#type, &message.payload);
-                for event in events {
-                    let _ = tx.send(event).await;
+        "msg" => {}
+        "im_enter_room_resp" => {
+            info!("room entry confirmed");
+            return Ok(());
+        }
+        other => {
+            debug!("payload type {other}");
+            return Ok(());
+        }
+    }
+    let response = WebcastResponse::decode(decompress_if_gzipped(&frame.payload)?.as_slice())?;
+    if response.needs_ack && !response.internal_ext.is_empty() {
+        match write.send(WsMessage::Binary(build_ack(frame.log_id, response.internal_ext.as_bytes())?.into())).await {
+            Ok(()) => debug!("ack sent"),
+            Err(e) => tracing::warn!(error = %e, "ack send failed"),
+        }
+    }
+    for message in &response.messages {
+        for event in mapper::decode_message(&message.r#type, &message.payload) {
+            match tx.send(event).await {
+                Ok(()) => {}
+                Err(e) => {
+                    tracing::warn!(error = %e, "event receiver dropped");
+                    return Err(TikTokLiveError::ConnectionClosed);
                 }
             }
         }
-        "im_enter_room_resp" => {
-            info!("room entry confirmed");
-        }
-        "hb" => {
-            debug!("heartbeat response");
-        }
-        other => {
-            debug!("unhandled payload type: {other}");
-        }
     }
-
     Ok(())
-}
-
-/// Establish a TCP tunnel through an HTTP proxy via CONNECT method.
-///
-/// Connects to the proxy, sends `CONNECT target_host:443`, validates the 200
-/// response, and returns the raw TCP stream. The caller (via `client_async_tls_with_config`)
-/// handles the TLS handshake over this tunnel.
-async fn connect_proxy_tunnel(proxy_url: &str, target_host: &str) -> Result<TcpStream, TikTokLiveError> {
-    let (proxy_host, proxy_port) = parse_proxy_addr(proxy_url)?;
-
-    let mut tcp = TcpStream::connect((&*proxy_host, proxy_port)).await?;
-
-    // HTTP CONNECT tunnel request
-    let connect_req = format!("CONNECT {target_host}:443 HTTP/1.1\r\nHost: {target_host}:443\r\n\r\n");
-    tcp.write_all(connect_req.as_bytes()).await?;
-
-    // Read the proxy response — we need at least the status line + header terminator
-    let mut buf = vec![0u8; 4096];
-    let mut total = 0usize;
-    loop {
-        let n = tcp.read(&mut buf[total..]).await?;
-        if n == 0 {
-            return Err(TikTokLiveError::invalid("proxy closed connection during CONNECT handshake"));
-        }
-        total += n;
-        // Look for end of HTTP headers (\r\n\r\n)
-        if find_header_end(&buf[..total]).is_some() {
-            let header_str = std::str::from_utf8(&buf[..total]).map_err(|e| TikTokLiveError::invalid(format!("proxy response not utf8: {e}")))?;
-            let status_line = header_str.lines().next().ok_or_else(|| TikTokLiveError::invalid("proxy returned empty response"))?;
-            if !status_line.contains("200") {
-                return Err(TikTokLiveError::invalid(format!("proxy CONNECT failed: {status_line}")));
-            }
-            break;
-        }
-        if total >= buf.len() {
-            return Err(TikTokLiveError::invalid("proxy response headers too large"));
-        }
-    }
-
-    Ok(tcp)
-}
-
-/// Parse proxy URL into (host, port). Supports http:// and https:// schemes.
-/// SOCKS5 proxies are not supported for WSS tunneling.
-fn parse_proxy_addr(proxy_url: &str) -> Result<(String, u16), TikTokLiveError> {
-    let stripped = proxy_url
-        .strip_prefix("http://")
-        .or_else(|| proxy_url.strip_prefix("https://"))
-        .ok_or_else(|| TikTokLiveError::InvalidUrl(format!("proxy url must start with http:// or https://: {proxy_url}")))?;
-
-    // Remove any trailing path
-    let authority = stripped.split('/').next().ok_or_else(|| TikTokLiveError::InvalidUrl("empty proxy host".into()))?;
-
-    // Remove userinfo (user:pass@) if present
-    let host_port = match authority.rsplit_once('@') {
-        Some((_, hp)) => hp,
-        None => authority,
-    };
-
-    // Split host:port
-    match host_port.rsplit_once(':') {
-        Some((host, port_str)) => {
-            let port: u16 = port_str.parse().map_err(|e| TikTokLiveError::InvalidUrl(format!("proxy port: {e}")))?;
-            Ok((host.to_string(), port))
-        }
-        None => {
-            // Default port based on scheme
-            let port = if proxy_url.starts_with("https://") { 443 } else { 8080 };
-            Ok((host_port.to_string(), port))
-        }
-    }
-}
-
-/// Find the `\r\n\r\n` that marks end of HTTP headers. Returns the byte offset
-/// of the first byte *after* the blank line.
-fn find_header_end(buf: &[u8]) -> Option<usize> {
-    for i in 0..buf.len().saturating_sub(3) {
-        if buf[i] == b'\r' && buf[i + 1] == b'\n' && buf[i + 2] == b'\r' && buf[i + 3] == b'\n' {
-            return Some(i + 4);
-        }
-    }
-    None
-}
-
-fn url_host(url: &str) -> Result<String, TikTokLiveError> {
-    let stripped = url
-        .strip_prefix("wss://")
-        .or_else(|| url.strip_prefix("ws://"))
-        .ok_or_else(|| TikTokLiveError::InvalidUrl("not a ws/wss url".into()))?;
-
-    let host = stripped.split('/').next().ok_or_else(|| TikTokLiveError::InvalidUrl("no host in url".into()))?;
-
-    Ok(host.to_string())
-}
-
-fn generate_ws_key() -> String {
-    let bytes: [u8; 16] = rand::random();
-    base64::engine::general_purpose::STANDARD.encode(bytes)
-}
-
-fn extract_header(resp: &http::Response<Option<Vec<u8>>>, name: &str) -> String {
-    match resp.headers().get(name) {
-        Some(v) => match v.to_str() {
-            Ok(s) => s.to_string(),
-            Err(_) => "?".to_string(),
-        },
-        None => "?".to_string(),
-    }
 }

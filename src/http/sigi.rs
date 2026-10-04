@@ -1,33 +1,23 @@
+use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::Value;
 
 use crate::errors::TikTokLiveError;
-use crate::http::ua::{random_ua, system_locale};
+use crate::http::api::FetchParams;
+use crate::structs::config::{fetch_locale, fetch_user_agent, json_bool, json_i64, json_str};
 
-const SIGI_MARKER: &str = r#"id="__UNIVERSAL_DATA_FOR_REHYDRATION__""#;
-
-/// Profile data scraped from a TikTok profile page via SIGI state.
-///
-/// Contains HD avatar URLs (720x720 and 1080x1080) plus basic profile
-/// metadata. All fields except `bio_link` are guaranteed present on
-/// public profiles.
 #[derive(Clone, Debug)]
 pub struct SigiProfile {
     pub user_id: String,
     pub unique_id: String,
     pub nickname: String,
     pub bio: String,
-    /// 100x100 pre-signed CDN URL.
     pub avatar_thumb: String,
-    /// 720x720 pre-signed CDN URL.
     pub avatar_medium: String,
-    /// 1080x1080 pre-signed CDN URL.
     pub avatar_large: String,
     pub verified: bool,
     pub private_account: bool,
     pub is_organization: bool,
-    /// Non-empty if user is currently live.
     pub room_id: String,
-    /// Only present if the user set a link in their bio.
     pub bio_link: Option<String>,
     pub follower_count: i64,
     pub following_count: i64,
@@ -36,118 +26,91 @@ pub struct SigiProfile {
     pub friend_count: i64,
 }
 
-/// Scrape a TikTok profile page and extract profile data from the
-/// embedded SIGI JSON blob.
-///
-/// This is a stateless function — no caching. Use [`super::profile_cache::ProfileCache`]
-/// for cached access.
-pub async fn scrape_profile(username: &str, ttwid: &str, timeout: std::time::Duration, user_agent: Option<&str>, proxy: Option<&str>, cookies: Option<&str>) -> Result<SigiProfile, TikTokLiveError> {
-    let clean = username.trim().trim_start_matches('@').to_lowercase();
-    let ua = user_agent.unwrap_or_else(|| random_ua());
+impl SigiProfile {
+    const MARKER: &'static str = r#"id="__UNIVERSAL_DATA_FOR_REHYDRATION__""#;
+}
 
-    let mut builder = reqwest::Client::builder().timeout(timeout).user_agent(ua);
-
-    if let Some(proxy_url) = proxy {
-        builder = builder.proxy(reqwest::Proxy::all(proxy_url).map_err(TikTokLiveError::Http)?);
+pub async fn scrape_profile(username: &str, ttwid: &str, params: &FetchParams<'_>) -> Result<SigiProfile, TikTokLiveError> {
+    let clean = normalize_username(username);
+    let locale = fetch_locale(params);
+    let mut headers = HeaderMap::new();
+    headers.insert("Cookie", HeaderValue::from_str(&profile_cookie(ttwid, params)).map_err(TikTokLiveError::invalid)?);
+    headers.insert(
+        "Accept-Language",
+        HeaderValue::from_str(&format!("{}-{},{};q=0.9", locale.language, locale.region, locale.language)).map_err(TikTokLiveError::invalid)?,
+    );
+    let mut builder = reqwest::Client::builder().timeout(params.timeout).user_agent(fetch_user_agent(params)).default_headers(headers);
+    for proxy in params.proxy.iter() {
+        builder = builder.proxy(reqwest::Proxy::all(*proxy)?);
     }
+    let html = builder.build()?.get(format!("{}@{clean}", params.endpoints.web)).send().await?.text().await?;
+    parse_profile(&clean, &html)
+}
 
-    let client = builder.build().map_err(TikTokLiveError::Http)?;
+pub fn normalize_username(username: &str) -> String {
+    username.trim().trim_start_matches('@').to_lowercase()
+}
 
-    let cookie_header = match cookies {
-        Some(c) => {
-            // Strip user-provided ttwid so the cache-managed fresh one always wins
-            let filtered: String = c.split("; ").filter(|pair| !pair.starts_with("ttwid=")).collect::<Vec<_>>().join("; ");
-            if filtered.is_empty() {
-                format!("ttwid={ttwid}")
-            } else {
-                format!("ttwid={ttwid}; {filtered}")
+fn profile_cookie(ttwid: &str, params: &FetchParams<'_>) -> String {
+    let mut cookie = format!("ttwid={ttwid}");
+    for extra in params.cookies.iter() {
+        for pair in extra.split("; ") {
+            if !pair.is_empty() && !pair.starts_with("ttwid=") {
+                cookie.push_str("; ");
+                cookie.push_str(pair);
             }
         }
-        None => format!("ttwid={ttwid}"),
+    }
+    cookie
+}
+
+pub fn parse_profile(username: &str, html: &str) -> Result<SigiProfile, TikTokLiveError> {
+    let blob: Value = serde_json::from_str(extract_sigi_json(html)?)?;
+    let Some(detail) = blob.pointer("/__DEFAULT_SCOPE__/webapp.user-detail") else {
+        return Err(TikTokLiveError::ProfileScrape("missing __DEFAULT_SCOPE__/webapp.user-detail".into()));
     };
-
-    let resp = client
-        .get(format!("https://www.tiktok.com/@{clean}"))
-        .header("Cookie", cookie_header)
-        .header("Accept-Language", {
-            let (l, r) = system_locale();
-            format!("{l}-{r},{l};q=0.9")
-        })
-        .send()
-        .await?;
-
-    let html = resp.text().await?;
-    let json_str = extract_sigi_json(&html)?;
-    let blob: Value = serde_json::from_str(json_str)?;
-
-    let user_detail = blob
-        .pointer("/__DEFAULT_SCOPE__/webapp.user-detail")
-        .ok_or_else(|| TikTokLiveError::ProfileScrape("missing __DEFAULT_SCOPE__/webapp.user-detail".into()))?;
-
-    let status_code = user_detail.get("statusCode").and_then(|v| v.as_i64()).unwrap_or_default();
-
-    match status_code {
+    match json_i64(detail, "/statusCode") {
         0 => {}
-        10222 => return Err(TikTokLiveError::ProfilePrivate(clean)),
-        10221 | 10223 => return Err(TikTokLiveError::ProfileNotFound(clean)),
+        10222 => return Err(TikTokLiveError::ProfilePrivate(username.to_string())),
+        10221 | 10223 => return Err(TikTokLiveError::ProfileNotFound(username.to_string())),
         code => return Err(TikTokLiveError::ProfileError(code)),
     }
-
-    let user = user_detail.pointer("/userInfo/user").ok_or_else(|| TikTokLiveError::ProfileScrape("missing userInfo.user".into()))?;
-
-    let stats = user_detail.pointer("/userInfo/stats").ok_or_else(|| TikTokLiveError::ProfileScrape("missing userInfo.stats".into()))?;
-
-    let bio_link = user.pointer("/bioLink/link").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
-
+    let Some(user) = detail.pointer("/userInfo/user") else {
+        return Err(TikTokLiveError::ProfileScrape("missing userInfo.user".into()));
+    };
+    let Some(stats) = detail.pointer("/userInfo/stats") else {
+        return Err(TikTokLiveError::ProfileScrape("missing userInfo.stats".into()));
+    };
     Ok(SigiProfile {
-        user_id: str_field(user, "id"),
-        unique_id: str_field(user, "uniqueId"),
-        nickname: str_field(user, "nickname"),
-        bio: str_field(user, "signature"),
-        avatar_thumb: str_field(user, "avatarThumb"),
-        avatar_medium: str_field(user, "avatarMedium"),
-        avatar_large: str_field(user, "avatarLarger"),
-        verified: bool_field(user, "verified"),
-        private_account: bool_field(user, "privateAccount"),
-        is_organization: i64_field(user, "isOrganization") != 0,
-        room_id: str_field(user, "roomId"),
-        bio_link,
-        follower_count: i64_field(stats, "followerCount"),
-        following_count: i64_field(stats, "followingCount"),
-        heart_count: i64_field(stats, "heartCount"),
-        video_count: i64_field(stats, "videoCount"),
-        friend_count: i64_field(stats, "friendCount"),
+        user_id: json_str(user, "/id"),
+        unique_id: json_str(user, "/uniqueId"),
+        nickname: json_str(user, "/nickname"),
+        bio: json_str(user, "/signature"),
+        avatar_thumb: json_str(user, "/avatarThumb"),
+        avatar_medium: json_str(user, "/avatarMedium"),
+        avatar_large: json_str(user, "/avatarLarger"),
+        verified: json_bool(user, "/verified"),
+        private_account: json_bool(user, "/privateAccount"),
+        is_organization: json_i64(user, "/isOrganization") != 0,
+        room_id: json_str(user, "/roomId"),
+        bio_link: user.pointer("/bioLink/link").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string),
+        follower_count: json_i64(stats, "/followerCount"),
+        following_count: json_i64(stats, "/followingCount"),
+        heart_count: json_i64(stats, "/heartCount"),
+        video_count: json_i64(stats, "/videoCount"),
+        friend_count: json_i64(stats, "/friendCount"),
     })
 }
 
-/// Extract the JSON string from the SIGI `<script>` tag via string searching.
-/// No regex, no HTML parser.
 fn extract_sigi_json(html: &str) -> Result<&str, TikTokLiveError> {
-    let marker_pos = html.find(SIGI_MARKER).ok_or_else(|| TikTokLiveError::ProfileScrape("SIGI script tag not found in HTML".into()))?;
-
-    let after_marker = &html[marker_pos..];
-    let gt_offset = after_marker.find('>').ok_or_else(|| TikTokLiveError::ProfileScrape("no > after SIGI marker".into()))?;
-
-    let json_start = marker_pos + gt_offset + 1;
-    let after_json = &html[json_start..];
-    let script_end = after_json.find("</script>").ok_or_else(|| TikTokLiveError::ProfileScrape("no </script> after SIGI JSON".into()))?;
-
-    let json_str = &html[json_start..json_start + script_end];
-    if json_str.is_empty() {
-        return Err(TikTokLiveError::ProfileScrape("empty SIGI JSON blob".into()));
+    let missing = |what: &str| TikTokLiveError::ProfileScrape(what.to_string());
+    let marker = html.find(SigiProfile::MARKER).ok_or_else(|| missing("SIGI script tag not found in HTML"))?;
+    let after_marker = &html[marker..];
+    let start = marker + after_marker.find('>').ok_or_else(|| missing("no > after SIGI marker"))? + 1;
+    let end = start + html[start..].find("</script>").ok_or_else(|| missing("no </script> after SIGI JSON"))?;
+    let json = &html[start..end];
+    if json.is_empty() {
+        return Err(missing("empty SIGI JSON blob"));
     }
-
-    Ok(json_str)
-}
-
-fn str_field(obj: &Value, key: &str) -> String {
-    obj.get(key).and_then(|v| v.as_str()).unwrap_or_default().to_string()
-}
-
-fn bool_field(obj: &Value, key: &str) -> bool {
-    obj.get(key).and_then(|v| v.as_bool()).unwrap_or_default()
-}
-
-fn i64_field(obj: &Value, key: &str) -> i64 {
-    obj.get(key).and_then(|v| v.as_i64()).unwrap_or_default()
+    Ok(json)
 }

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0
+
+### Breaking
+- `fetch_room_id` errors follow the spec: a non-zero `statusCode` → `ApiError(code)` (was `InvalidResponse`); HTTP 403/429, an empty body or a non-JSON body → `TikTokBlocked(reason)`. `fetch_room_info` maps other `status_code`s to `ApiError`. New variants: `ApiError(i64)`, `TikTokBlocked(String)`, `Proxy(String)`.
+- `fetch_room_audience(room_id, AnchorId::Known(id) | AnchorId::FromRoomInfo, params)` replaces `Option<&str>`.
+- `FetchParams` gained `endpoints: &Endpoints` (`..Default::default()` keeps the TikTok defaults). `RoomIdResponse` moved to `http::parse` (still re-exported from `http::api`).
+- `scrape_profile(username, ttwid, &FetchParams)`.
+- `websocket::connection::run_websocket(&WsSession, tx)`.
+- `TTWID_URL` const → `TIKTOK_WEB_URL`.
+
+### Fixed
+- WSS proxy: credentials in the proxy URL are now sent (`Proxy-Authorization: Basic`) and SOCKS5 / SOCKS5h work for WSS. Before, `.proxy("socks5://…")` failed the WSS tunnel and HTTP proxy auth was silently dropped. The reqwest `socks` feature is enabled, so SOCKS5 also works for the HTTP calls (it was documented, but didn't work).
+- A closed event receiver now stops the WebSocket instead of dropping events silently.
+
+### Added
+- `structs::config::Endpoints` + `TikTokLiveBuilder::endpoints()` / `ProfileCache::endpoints()`: override the web/webcast/WSS bases (local fakes, mirrors).
+- `http::parse` (public, pure): `parse_room_id`, `parse_room_info`, `parse_audience`, `parse_owner_id`. `http::sigi::parse_profile`. `websocket::proxy::open_tunnel`.
+- Offline tests: `api_parse_test` (F1/F9/F10 fixtures), `profile_cache_test` (local origin: parse, cache hit, negative cache, ttwid once, invalidate), `proxy_test` (HTTP CONNECT + Basic auth, 407, SOCKS5 with/without auth, bad scheme, HTTP through SOCKS5), `client_offline_test`. The last one runs the full client against a local HTTP origin + scripted WS server: Connected → Chat → Reconnecting(1,2 s) → Reconnecting(2,2 s, DEVICE_BLOCKED) → Disconnected, cookies tok0/tok0/tok1, plus the whole client through a SOCKS5 relay.
+
 ## 0.4.0
 
 ### Breaking
